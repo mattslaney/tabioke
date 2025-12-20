@@ -1,6 +1,8 @@
-# Tabioke 🎸
+# [Tabioke](https://mattslaney.github.io/tabioke/) 🎸
 
 Tabioke is a lightweight web app for practicing guitar using synchronized tablature and YouTube videos ▶️. It combines a tab viewer, a metronome 🥁, and a video player, and can load tabs directly from GitHub 🐙 or GitLab 🦊 repositories (public or private).
+
+Github Pages Link: https://mattslaney.github.io/tabioke/
 
 ## Features
 
