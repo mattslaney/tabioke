@@ -39,8 +39,14 @@ class TabiokeApp {
 
   setupKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
-      // Don't trigger shortcuts when typing in inputs
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+      // Don't trigger shortcuts when typing in inputs, textareas,
+      // contenteditable areas, or when focus is inside the tab-viewer.
+      const target = e.target;
+      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+      const isEditable = target && target.isContentEditable;
+      const isInTabViewer = this.tabViewer && e.composedPath && e.composedPath().includes(this.tabViewer);
+
+      if (isInput || isEditable || isInTabViewer) {
         return;
       }
 
