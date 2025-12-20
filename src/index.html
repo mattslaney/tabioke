@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabioke - Guitar Tab Practice</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- Left Panel - Tab Viewer -->
+      <section class="panel panel-tab">
+        <tab-viewer></tab-viewer>
+      </section>
+
+      <!-- Right Panels Container -->
+      <div class="right-panels">
+        <!-- Top Right - YouTube Player -->
+        <section class="panel panel-video">
+          <youtube-player></youtube-player>
+        </section>
+
+        <!-- Bottom Right - Metronome -->
+        <section class="panel panel-metronome">
+          <metronome-app></metronome-app>
+        </section>
+      </div>
+    </div>
+
+    <!-- Repository Browser Modal -->
+    <repo-browser></repo-browser>
+
+    <!-- Web Components -->
+    <script src="components/tab-viewer.js" type="module"></script>
+    <script src="components/youtube-player.js" type="module"></script>
+    <script src="components/metronome-app.js" type="module"></script>
+    <script src="components/repo-browser.js" type="module"></script>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
