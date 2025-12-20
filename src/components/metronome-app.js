@@ -117,6 +117,9 @@ class MetronomeApp extends HTMLElement {
 
   disconnectedCallback() {
     this.stop();
+    if (this._offsetWaiter) {
+      clearInterval(this._offsetWaiter);
+    }
     if (this.audioContext) {
       this.audioContext.close();
     }
@@ -851,8 +854,13 @@ class MetronomeApp extends HTMLElement {
       if (this.autoStartWithVideo) {
         if (e.detail.state === 'playing') {
           if (this.offset > 0) {
-            setTimeout(() => this.resume(), this.offset * 1000);
+            // Poll video time until offset is reached
+            this.waitForOffset(e.detail.currentTime);
+          } else if (this.offset < 0) {
+            // Negative offset - start immediately (video is already past offset point)
+            this.resume();
           } else {
+            // No offset
             this.resume();
           }
         } else if (e.detail.state === 'paused' || e.detail.state === 'ended') {
@@ -883,6 +891,46 @@ class MetronomeApp extends HTMLElement {
         this.adjustTempoForPlaybackRate(rate);
       }
     });
+  }
+
+  /**
+   * Wait for video to reach the offset time before starting metronome
+   * @param {number} startTime - Video time when play was pressed
+   */
+  waitForOffset(startTime) {
+    // Clear any existing offset waiter
+    if (this._offsetWaiter) {
+      clearInterval(this._offsetWaiter);
+    }
+
+    // Get reference to YouTube player
+    const youtubePlayer = document.querySelector('youtube-player');
+    if (!youtubePlayer) {
+      // No player found, fall back to immediate start
+      this.resume();
+      return;
+    }
+
+    // Poll every 100ms to check if we've reached offset
+    this._offsetWaiter = setInterval(() => {
+      const currentTime = youtubePlayer.getCurrentTime();
+      const playerState = youtubePlayer.getPlayerState();
+      
+      // Check if video is still playing
+      if (playerState !== 1) {
+        // Video stopped/paused - cancel waiting
+        clearInterval(this._offsetWaiter);
+        this._offsetWaiter = null;
+        return;
+      }
+      
+      if (currentTime >= this.offset) {
+        // Offset reached - start metronome
+        clearInterval(this._offsetWaiter);
+        this._offsetWaiter = null;
+        this.resume();
+      }
+    }, 100);
   }
 
   adjustTempoForPlaybackRate(rate) {
