@@ -9,6 +9,54 @@ Tabioke is a lightweight web app for practicing guitar using synchronized tablat
 - **Metronome** 🥁: Precise timing with various time signatures and tempo sync
 - **Repository Browser** 📁: Browse and load tabs from GitHub 🐙 or GitLab 🦊 repositories (public or private)
 
+## Tab File Format (.tab)
+
+Tabioke supports simple text-based tab files with an optional header block at the top. Headers are key/value pairs in the form `Header: value`. The header block should appear at the top of the file; a single blank line separates headers from the tab/notation content.
+
+- Header syntax: `HeaderName: value` (case-insensitive header names are accepted). Unknown headers are ignored by the app.
+- Header order does not matter. If a header appears multiple times, the first occurrence is used.
+- Use a blank line after the header block to start the tab body.
+
+**Common headers and meaning**
+
+- **Title:** Song title (string). Example: `Title: AmE`
+- **Artist:** Artist name (string). Example: `Artist: No-one`
+- **Tempo:** Tempo in beats per minute (integer). Example: `Tempo: 90` (default: `120` if not provided)
+- **Timing:** Time signature (e.g., `4/4`, `3/4`). Example: `Timing: 4/4` (default: `4/4`)
+- **YouTubeURL:** Full YouTube watch URL for the backing/sync video. Example: `YouTubeURL: https://www.youtube.com/watch?v=VIDEO_ID`
+- **YouTubeOffset:** Offset in seconds (can be fractional, positive or negative) used to sync the video to the tab. Positive values delay the video relative to the tab (the tab leads); negative values start the video earlier (the video leads). Example: `YouTubeOffset: 0.45`
+- **Capo:** Capo fret number (integer). Example: `Capo: 2` (default: `0` meaning no capo)
+- **Tuning:** Space-separated string tunings low-to-high (or common shorthand). Example: `Tuning: E A D G B E` or `Tuning: D A D G B D` (default: standard `E A D G B E`)
+- **Key:** Musical key (string). Example: `Key: G` or `Key: Am`
+
+Example header block and beginning of a .tab file:
+
+```text
+Title: AmE
+Artist: No-one
+Tempo: 90
+Timing: 4/4
+YouTubeURL: https://www.youtube.com/watch?v=xxxxxxxxxxx
+YouTubeOffset: 0.45
+Capo: 2
+Tuning: E A D G B E
+Key: G
+
+    Am                           E
+e|--0--------0----------------|--0-----------0-------------|
+B|--1-----1-----1-------------|--0--------0-----0----------|
+G|--2--2-----------2----------|--1-----1-----------1-------|
+D|--2-----------------2-------|--2--2-----------------2----|
+A|--0--------------------0----|--2-------------------------|
+E|----------------------------|--0-------------------------|
+```
+
+Notes:
+
+- Lines that do not match the `Header: value` pattern (after the header block) are interpreted as the tab/notation and rendered by the app.
+- Headers are optional; sensible defaults apply where noted.
+- For best results include at least `Title` and `Tempo` in the header block when publishing tabs for others.
+
 ## 🔒 Using Private Repositories
 
 To access tabs from private GitHub or GitLab repositories, you need to provide an access token:
@@ -64,5 +112,3 @@ Project Access Token / Deploy Token
 - Revoke the token immediately if it is accidentally exposed.
 - Tokens are stored locally in your browser's `localStorage` by Tabioke so they remain on your machine only; they are only sent to GitHub/GitLab APIs when browsing or fetching files.
 - Do not paste tokens into untrusted applications or share them.
-
-
