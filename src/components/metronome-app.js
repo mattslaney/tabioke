@@ -868,6 +868,14 @@ class MetronomeApp extends HTMLElement {
       }
     });
 
+    // Listen for video loop restart - reset beat position
+    window.addEventListener('video-loop-restart', () => {
+      if (this.autoStartWithVideo && this.isPlaying) {
+        // Reset to beat 1 when loop restarts
+        this.resetToBeat(0);
+      }
+    });
+
     // Listen for playback rate changes
     window.addEventListener('playback-rate-change', (e) => {
       if (this.syncWithVideo) {

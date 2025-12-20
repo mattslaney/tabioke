@@ -704,6 +704,20 @@ class YoutubePlayer extends HTMLElement {
       }
     });
 
+    // Mute/Unmute
+    const muteBtn = this.shadowRoot.getElementById('mute-btn');
+    muteBtn.addEventListener('click', () => {
+      if (this.player) {
+        if (this.player.isMuted()) {
+          this.player.unMute();
+          muteBtn.textContent = '🔊';
+        } else {
+          this.player.mute();
+          muteBtn.textContent = '🔇';
+        }
+      }
+    });
+
     // Playback Speed
     speedSelect.addEventListener('change', (e) => {
       const rate = parseFloat(e.target.value);
@@ -1000,6 +1014,13 @@ class YoutubePlayer extends HTMLElement {
           
           if (currentTime >= endTime) {
             this.player.seekTo(startTime, true);
+            // Notify that loop has restarted
+            window.dispatchEvent(new CustomEvent('video-loop-restart', {
+              detail: { 
+                loopStartTime: startTime,
+                loopEndTime: endTime 
+              }
+            }));
           }
           
           if (currentTime < startTime - 0.5) {
