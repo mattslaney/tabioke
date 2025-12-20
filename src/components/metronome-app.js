@@ -22,6 +22,8 @@ class MetronomeApp extends HTMLElement {
     // Audio context
     this.audioContext = null;
     this.nextBeatTime = 0;
+    this.startTime = 0; // Absolute reference time for beat calculations
+    this.totalBeatsScheduled = 0; // Total beats scheduled from start
     this.schedulerTimer = null;
     this.lookahead = 25.0; // How frequently to call scheduling function (ms)
     this.scheduleAheadTime = 0.1; // How far ahead to schedule audio (s)
@@ -952,7 +954,9 @@ class MetronomeApp extends HTMLElement {
 
     this.isPlaying = true;
     this.currentBeat = 0;
-    this.nextBeatTime = this.audioContext.currentTime;
+    this.totalBeatsScheduled = 0;
+    this.startTime = this.audioContext.currentTime;
+    this.nextBeatTime = this.startTime;
     this.wasPaused = false;
     this.pausedTimeRemaining = 0;
     
@@ -977,10 +981,15 @@ class MetronomeApp extends HTMLElement {
     // If we were paused mid-beat, resume with preserved timing
     if (this.wasPaused && this.pausedTimeRemaining > 0) {
       this.nextBeatTime = this.audioContext.currentTime + this.pausedTimeRemaining;
+      // Update start time to maintain absolute timing reference
+      const secondsPerBeat = 60.0 / this.tempo;
+      this.startTime = this.nextBeatTime - (this.totalBeatsScheduled * secondsPerBeat);
     } else {
       // Fresh start
       this.currentBeat = 0;
-      this.nextBeatTime = this.audioContext.currentTime;
+      this.totalBeatsScheduled = 0;
+      this.startTime = this.audioContext.currentTime;
+      this.nextBeatTime = this.startTime;
     }
     
     this.wasPaused = false;
@@ -1015,6 +1024,7 @@ class MetronomeApp extends HTMLElement {
     this.wasPaused = false;
     this.pausedTimeRemaining = 0;
     this.currentBeat = 0;
+    this.totalBeatsScheduled = 0;
     
     if (this.schedulerTimer) {
       clearTimeout(this.schedulerTimer);
@@ -1064,7 +1074,9 @@ class MetronomeApp extends HTMLElement {
 
   advanceBeat() {
     const secondsPerBeat = 60.0 / this.tempo;
-    this.nextBeatTime += secondsPerBeat;
+    this.totalBeatsScheduled++;
+    // Calculate next beat time from absolute start time to prevent drift
+    this.nextBeatTime = this.startTime + (this.totalBeatsScheduled * secondsPerBeat);
     this.currentBeat = (this.currentBeat + 1) % this.beatsPerMeasure;
   }
 
