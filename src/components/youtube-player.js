@@ -216,6 +216,8 @@ class YoutubePlayer extends HTMLElement {
           padding: 5px 12px;
           font-size: 0.75rem;
           flex-shrink: 0;
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
         }
 
         .load-btn:hover {
@@ -299,6 +301,8 @@ class YoutubePlayer extends HTMLElement {
           cursor: pointer;
           transition: all 0.15s ease;
           flex-shrink: 0;
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
         }
 
         .control-btn:hover {
@@ -342,6 +346,7 @@ class YoutubePlayer extends HTMLElement {
           font-size: 0.7rem;
           cursor: pointer;
           padding: 0;
+          touch-action: manipulation;
         }
 
         .speed-select:focus {
@@ -755,8 +760,24 @@ class YoutubePlayer extends HTMLElement {
     const loopStart = this.shadowRoot.getElementById('loop-start');
     const loopEnd = this.shadowRoot.getElementById('loop-end');
 
+    // Helper function for reliable button clicks on mobile
+    const addButtonHandler = (element, handler) => {
+      let touchHandled = false;
+      element.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        touchHandled = true;
+        handler(e);
+        setTimeout(() => { touchHandled = false; }, 300);
+      }, { passive: false });
+      element.addEventListener('click', (e) => {
+        if (!touchHandled) {
+          handler(e);
+        }
+      });
+    };
+
     // Load video
-    loadBtn.addEventListener('click', () => this.loadVideo());
+    addButtonHandler(loadBtn, () => this.loadVideo());
     urlInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') this.loadVideo();
     });
@@ -765,7 +786,7 @@ class YoutubePlayer extends HTMLElement {
     });
 
     // Play/Pause
-    playPauseBtn.addEventListener('click', () => {
+    addButtonHandler(playPauseBtn, () => {
       if (this.player) {
         const state = this.player.getPlayerState();
         if (state === 1) {
@@ -786,7 +807,7 @@ class YoutubePlayer extends HTMLElement {
     });
 
     // Stop
-    stopBtn.addEventListener('click', () => {
+    addButtonHandler(stopBtn, () => {
       if (this.player) {
         this.player.stopVideo();
         // Update play/pause button to show play icon
@@ -799,7 +820,7 @@ class YoutubePlayer extends HTMLElement {
     });
 
     // Mute/Unmute
-    muteBtn.addEventListener('click', () => {
+    addButtonHandler(muteBtn, () => {
       if (this.player) {
         if (this.player.isMuted()) {
           this.player.unMute();
