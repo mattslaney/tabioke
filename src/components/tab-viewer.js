@@ -179,8 +179,9 @@ class TabViewer extends HTMLElement {
           font-family: var(--font-mono);
           font-size: 14px;
           line-height: 1.6;
-          white-space: pre;
-          overflow-x: auto;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          overflow-x: hidden;
           overflow-y: auto;
           pointer-events: none;
           box-sizing: border-box;
@@ -201,8 +202,9 @@ class TabViewer extends HTMLElement {
           line-height: 1.6;
           color: transparent;
           caret-color: var(--text-primary);
-          white-space: pre;
-          overflow-x: auto;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          overflow-x: hidden;
           overflow-y: auto;
           box-sizing: border-box;
         }
