@@ -39,21 +39,34 @@ class TabiokeApp {
 
   setupKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
-      // Don't trigger shortcuts when typing in inputs, textareas,
-      // contenteditable areas, or when focus is inside the tab-viewer.
-      const target = e.target;
-      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
-      const isEditable = target && target.isContentEditable;
-      const isInTabViewer = this.tabViewer && e.composedPath && e.composedPath().includes(this.tabViewer);
+      // Check the actual focused element, including through shadow DOM
+      const composedPath = e.composedPath ? e.composedPath() : [e.target];
+      const actualTarget = composedPath[0];
+      const isInput = actualTarget && (actualTarget.tagName === 'INPUT' || actualTarget.tagName === 'TEXTAREA');
+      const isEditable = actualTarget && actualTarget.isContentEditable;
+      
+      // Check if media is playing
+      const isPlaying = this.youtubePlayer && this.youtubePlayer.getPlayerState() === 1;
 
-      if (isInput || isEditable || isInTabViewer) {
+      // Page Up/Down always scrolls tab editor (even when in inputs)
+      if (e.key === 'PageUp' || e.key === 'PageDown') {
+        e.preventDefault();
+        this.scrollTabEditor(e.key === 'PageUp' ? -1 : 1);
+        return;
+      }
+
+      // For other shortcuts, skip if typing in inputs/textareas
+      if (isInput || isEditable) {
         return;
       }
 
       switch (e.key) {
-        case ' ': // Spacebar - Play/Pause
-          e.preventDefault();
-          this.togglePlayPause();
+        case ' ': // Spacebar - Play/Pause (only when playing)
+          if (isPlaying) {
+            e.preventDefault();
+            this.togglePlayPause();
+          }
+          // Otherwise, let default behavior happen
           break;
         case 'm': // M - Toggle metronome
         case 'M':
@@ -62,20 +75,85 @@ class TabiokeApp {
             if (playBtn) playBtn.click();
           }
           break;
-        case 'ArrowUp': // Increase tempo
-          if (e.shiftKey && this.metronome) {
+        case 'ArrowLeft': // Seek backward when playing
+          if (isPlaying) {
+            e.preventDefault();
+            this.seekVideo(-5); // 5 seconds backward
+          }
+          break;
+        case 'ArrowRight': // Seek forward when playing
+          if (isPlaying) {
+            e.preventDefault();
+            this.seekVideo(5); // 5 seconds forward
+          }
+          break;
+        case 'ArrowUp': // Increase speed when playing, or tempo with Shift
+          if (isPlaying) {
+            e.preventDefault();
+            this.adjustPlaybackRate(0.25); // Increase by 0.25x
+          } else if (e.shiftKey && this.metronome) {
             e.preventDefault();
             this.metronome.setTempo(this.metronome.getTempo() + 5);
           }
+          // Otherwise, let default behavior happen (cursor movement in editor)
           break;
-        case 'ArrowDown': // Decrease tempo
-          if (e.shiftKey && this.metronome) {
+        case 'ArrowDown': // Decrease speed when playing, or tempo with Shift
+          if (isPlaying) {
+            e.preventDefault();
+            this.adjustPlaybackRate(-0.25); // Decrease by 0.25x
+          } else if (e.shiftKey && this.metronome) {
             e.preventDefault();
             this.metronome.setTempo(this.metronome.getTempo() - 5);
           }
+          // Otherwise, let default behavior happen (cursor movement in editor)
           break;
       }
     });
+  }
+
+  /**
+   * Scroll the tab editor by a page
+   * @param {number} direction - 1 for down, -1 for up
+   */
+  scrollTabEditor(direction) {
+    if (!this.tabViewer) return;
+
+    const tabArea = this.tabViewer.shadowRoot.getElementById('tab-area');
+    const highlightLayer = this.tabViewer.shadowRoot.getElementById('highlight-layer');
+    
+    if (tabArea) {
+      const scrollAmount = tabArea.clientHeight * 0.9; // 90% of viewport height
+      const newScrollTop = tabArea.scrollTop + (scrollAmount * direction);
+      
+      tabArea.scrollTop = newScrollTop;
+      if (highlightLayer) {
+        highlightLayer.scrollTop = newScrollTop;
+      }
+    }
+  }
+
+  /**
+   * Seek video forward or backward
+   * @param {number} seconds - Positive for forward, negative for backward
+   */
+  seekVideo(seconds) {
+    if (!this.youtubePlayer) return;
+
+    const currentTime = this.youtubePlayer.getCurrentTime();
+    const newTime = Math.max(0, currentTime + seconds);
+    this.youtubePlayer.seekTo(newTime);
+  }
+
+  /**
+   * Adjust playback rate
+   * @param {number} delta - Amount to change (e.g., 0.25, -0.25)
+   */
+  adjustPlaybackRate(delta) {
+    if (!this.youtubePlayer || !this.youtubePlayer.player) return;
+
+    const currentRate = this.youtubePlayer.player.getPlaybackRate();
+    const newRate = Math.max(0.25, Math.min(2, currentRate + delta)); // Clamp between 0.25x and 2x
+    this.youtubePlayer.setPlaybackRate(newRate);
   }
 
   togglePlayPause() {
