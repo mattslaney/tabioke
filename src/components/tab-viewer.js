@@ -26,6 +26,14 @@ class TabViewer extends HTMLElement {
     this.repoBranch = null;
     this.repoHostname = null;
     this.originalRepoContent = null; // Track original content to detect changes
+    
+    // Track last accessed repo for creating new files
+    this.lastRepoProvider = null;
+    this.lastRepoOwner = null;
+    this.lastRepoRepo = null;
+    this.lastRepoBranch = null;
+    this.lastRepoHostname = null;
+    this.isNewFile = false; // Track if current content is a new unsaved file
   }
 
   connectedCallback() {
@@ -662,6 +670,7 @@ Some lyrics here to sing along with"
       
       // Store repo context
       this.loadedFromRepo = true;
+      this.isNewFile = false;
       this.repoFilePath = path;
       this.repoFileName = fileName;
       this.repoProvider = provider;
@@ -670,12 +679,54 @@ Some lyrics here to sing along with"
       this.repoBranch = branch;
       this.repoHostname = hostname || 'gitlab.com';
       
+      // Also store as last accessed repo (for creating new files)
+      this.lastRepoProvider = provider;
+      this.lastRepoOwner = owner;
+      this.lastRepoRepo = repo;
+      this.lastRepoBranch = branch;
+      this.lastRepoHostname = hostname || 'gitlab.com';
+      
       // Show save button (but keep it disabled until changes are made)
       saveToRepoBtn.classList.add('visible');
       saveToRepoBtn.disabled = true;
       
       tabUrlInput.value = url;
       this.loadFromUrl(url, token);
+    });
+
+    // Listen for successful commits to update state
+    window.addEventListener('commit-success', (e) => {
+      const { filePath, fileName, provider, owner, repo, branch, hostname, content, isNewFile } = e.detail;
+      
+      // After a successful commit, update state so the file is now treated as an existing repo file
+      this.loadedFromRepo = true;
+      this.isNewFile = false;
+      this.repoFilePath = filePath;
+      this.repoFileName = fileName;
+      this.repoProvider = provider;
+      this.repoOwner = owner;
+      this.repoRepo = repo;
+      this.repoBranch = branch;
+      this.repoHostname = hostname;
+      this.originalRepoContent = content; // Update original content so no changes are detected
+      
+      // Update last accessed repo info
+      this.lastRepoProvider = provider;
+      this.lastRepoOwner = owner;
+      this.lastRepoRepo = repo;
+      this.lastRepoBranch = branch;
+      this.lastRepoHostname = hostname;
+      
+      // Update button states
+      saveToRepoBtn.classList.add('visible');
+      saveToRepoBtn.disabled = true; // No changes since we just committed
+      
+      console.log(`Commit success: ${isNewFile ? 'Created' : 'Updated'} ${filePath}`);
+    });
+
+    // Listen for new tab creation from repo browser
+    window.addEventListener('new-tab-from-repo', (e) => {
+      this.setupNewTab(e.detail);
     });
 
     // Check for URL parameter on load
@@ -1426,8 +1477,15 @@ Some lyrics here to sing along with"
    * Save current tab content back to repository
    */
   saveToRepository() {
-    if (!this.loadedFromRepo || !this.repoFilePath) {
-      alert('This tab was not loaded from a repository. Use the Browse button to load a tab from GitHub or GitLab first.');
+    // Check if we have repo context
+    if (!this.repoProvider || !this.repoOwner || !this.repoRepo) {
+      alert('This tab was not loaded from a repository. Use the Browse button to load a tab from GitHub or GitLab first, or use the New File button to create a new file.');
+      return;
+    }
+    
+    // For existing files, check that we have a file path
+    if (!this.isNewFile && (!this.loadedFromRepo || !this.repoFilePath)) {
+      alert('This tab was not loaded from a repository. Use the Browse button to load a tab from GitHub or GitLab first, or use the New File button to create a new file.');
       return;
     }
 
@@ -1453,9 +1511,73 @@ Some lyrics here to sing along with"
         repo: this.repoRepo,
         branch: this.repoBranch,
         hostname: this.repoHostname,
-        accessToken: accessToken
+        accessToken: accessToken,
+        isNewFile: this.isNewFile
       }
     }));
+  }
+
+  /**
+   * Set up a new tab file with empty template headers
+   * Called when user clicks "New File" in the repo browser
+   */
+  setupNewTab(data) {
+    const { filePath, provider, owner, repo, branch, hostname } = data;
+    
+    // Clear current content and set up template
+    const tabArea = this.shadowRoot.getElementById('tab-area');
+    const tabUrlInput = this.shadowRoot.getElementById('tab-url-input');
+    
+    // Create template with standard headers
+    const template = `Title: 
+Artist: 
+Tempo: 120
+Timing: 4/4
+YoutubeUrl: 
+YoutubeOffset: 0
+
+---
+
+`;
+    
+    tabArea.value = template;
+    this.tabContent = template;
+    tabUrlInput.value = '';
+    this.updateHighlighting();
+    
+    // Set up state for new file
+    this.isNewFile = true;
+    this.loadedFromRepo = false;
+    this.repoFilePath = filePath;
+    this.repoFileName = filePath.split('/').pop();
+    this.repoProvider = provider;
+    this.repoOwner = owner;
+    this.repoRepo = repo;
+    this.repoBranch = branch;
+    this.repoHostname = hostname;
+    this.originalRepoContent = null;
+    
+    // Also update last accessed repo
+    this.lastRepoProvider = provider;
+    this.lastRepoOwner = owner;
+    this.lastRepoRepo = repo;
+    this.lastRepoBranch = branch;
+    this.lastRepoHostname = hostname;
+    
+    // Show save button as enabled (content is "changed" from empty)
+    const saveToRepoBtn = this.shadowRoot.getElementById('save-to-repo-btn');
+    saveToRepoBtn.classList.add('visible');
+    saveToRepoBtn.disabled = false;
+    
+    // Clear YouTube player
+    window.dispatchEvent(new CustomEvent('clear-youtube', {}));
+    
+    // Focus the tab area at the Title line
+    setTimeout(() => {
+      tabArea.focus();
+      // Position cursor after "Title: "
+      tabArea.setSelectionRange(7, 7);
+    }, 100);
   }
 }
 

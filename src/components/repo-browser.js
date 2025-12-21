@@ -522,6 +522,139 @@ class RepoBrowser extends HTMLElement {
             min-width: 80px;
           }
         }
+
+        /* New file section */
+        .new-file-section {
+          padding: 12px 20px;
+          border-top: 1px solid var(--border-color);
+          display: none;
+        }
+
+        .new-file-section.visible {
+          display: block;
+        }
+
+        .new-file-btn {
+          width: 100%;
+          font-family: var(--font-display);
+          font-weight: 500;
+          cursor: pointer;
+          border: 1px dashed #3b82f6;
+          border-radius: 6px;
+          background: transparent;
+          color: #3b82f6;
+          padding: 10px 16px;
+          font-size: 0.85rem;
+          transition: all 0.2s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+        }
+
+        .new-file-btn:hover {
+          background: rgba(59, 130, 246, 0.1);
+          border-style: solid;
+        }
+
+        /* New file modal (inner modal) */
+        .new-file-modal-overlay {
+          display: none;
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.7);
+          z-index: 10;
+          justify-content: center;
+          align-items: center;
+          border-radius: 12px;
+        }
+
+        .new-file-modal-overlay.open {
+          display: flex;
+        }
+
+        .new-file-modal {
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          padding: 20px;
+          width: 90%;
+          max-width: 400px;
+        }
+
+        .new-file-modal h3 {
+          margin: 0 0 16px 0;
+          font-family: var(--font-display);
+          font-size: 1rem;
+          color: var(--text-primary);
+        }
+
+        .new-file-modal input {
+          width: 100%;
+          font-family: monospace;
+          font-size: 0.9rem;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          padding: 10px 12px;
+          color: var(--text-primary);
+          box-sizing: border-box;
+          margin-bottom: 8px;
+        }
+
+        .new-file-modal input:focus {
+          outline: none;
+          border-color: var(--accent-primary);
+        }
+
+        .new-file-modal input::placeholder {
+          color: var(--text-muted);
+        }
+
+        .new-file-modal .hint {
+          font-size: 0.7rem;
+          color: var(--text-muted);
+          margin-bottom: 16px;
+        }
+
+        .new-file-modal .button-group {
+          display: flex;
+          gap: 12px;
+        }
+
+        .new-file-modal .btn {
+          flex: 1;
+          font-family: var(--font-display);
+          font-weight: 500;
+          font-size: 0.85rem;
+          padding: 10px 16px;
+          border-radius: 6px;
+          border: none;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .new-file-modal .btn-primary {
+          background: #3b82f6;
+          color: white;
+        }
+
+        .new-file-modal .btn-primary:hover {
+          filter: brightness(1.1);
+        }
+
+        .new-file-modal .btn-secondary {
+          background: transparent;
+          color: var(--text-secondary);
+          border: 1px solid var(--border-color);
+        }
+
+        .new-file-modal .btn-secondary:hover {
+          background: var(--bg-elevated);
+        }
       </style>
 
       <div class="modal-overlay" id="modal-overlay">
@@ -575,6 +708,28 @@ class RepoBrowser extends HTMLElement {
               <div class="empty-state">
                 <div class="empty-icon">📂</div>
                 <div>Enter a repository URL and click Load to browse files</div>
+              </div>
+            </div>
+            <div class="new-file-section" id="new-file-section">
+              <button class="new-file-btn" id="new-file-btn">
+                <span>➕</span>
+                <span>Create New Tab File</span>
+              </button>
+            </div>
+            <!-- New file name modal -->
+            <div class="new-file-modal-overlay" id="new-file-modal-overlay">
+              <div class="new-file-modal">
+                <h3>📝 Create New Tab File</h3>
+                <input 
+                  type="text" 
+                  id="new-file-path-input" 
+                  placeholder="e.g. Artist Name/Song Title.tab"
+                >
+                <div class="hint">Use folder/filename.tab format to organize in folders</div>
+                <div class="button-group">
+                  <button class="btn btn-secondary" id="new-file-cancel-btn">Cancel</button>
+                  <button class="btn btn-primary" id="new-file-create-btn">Create</button>
+                </div>
               </div>
             </div>
           </div>
@@ -665,10 +820,58 @@ class RepoBrowser extends HTMLElement {
       this.navigateTo('');
     });
 
+    // New file button and modal
+    const newFileBtn = this.shadowRoot.getElementById('new-file-btn');
+    const newFileModalOverlay = this.shadowRoot.getElementById('new-file-modal-overlay');
+    const newFilePathInput = this.shadowRoot.getElementById('new-file-path-input');
+    const newFileCancelBtn = this.shadowRoot.getElementById('new-file-cancel-btn');
+    const newFileCreateBtn = this.shadowRoot.getElementById('new-file-create-btn');
+
+    newFileBtn.addEventListener('click', () => {
+      // Show the modal
+      newFileModalOverlay.classList.add('open');
+      // Pre-fill with current path if we're in a folder
+      if (this.currentPath) {
+        newFilePathInput.value = this.currentPath + '/';
+      } else {
+        newFilePathInput.value = '';
+      }
+      setTimeout(() => {
+        newFilePathInput.focus();
+        // Position cursor at end
+        newFilePathInput.setSelectionRange(newFilePathInput.value.length, newFilePathInput.value.length);
+      }, 100);
+    });
+
+    newFileCancelBtn.addEventListener('click', () => {
+      newFileModalOverlay.classList.remove('open');
+    });
+
+    newFileModalOverlay.addEventListener('click', (e) => {
+      if (e.target === newFileModalOverlay) {
+        newFileModalOverlay.classList.remove('open');
+      }
+    });
+
+    newFileCreateBtn.addEventListener('click', () => {
+      this.createNewFile();
+    });
+
+    newFilePathInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        this.createNewFile();
+      }
+    });
+
     // Escape key to close
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.isOpen) {
-        this.close();
+        // Close new file modal first if open
+        if (newFileModalOverlay.classList.contains('open')) {
+          newFileModalOverlay.classList.remove('open');
+        } else {
+          this.close();
+        }
       }
     });
   }
@@ -699,6 +902,68 @@ class RepoBrowser extends HTMLElement {
     this.isOpen = false;
     const overlay = this.shadowRoot.getElementById('modal-overlay');
     overlay.classList.remove('open');
+    
+    // Also close the new file modal if open
+    const newFileModalOverlay = this.shadowRoot.getElementById('new-file-modal-overlay');
+    newFileModalOverlay.classList.remove('open');
+  }
+
+  /**
+   * Create a new tab file and dispatch event to set up editor
+   */
+  createNewFile() {
+    const newFilePathInput = this.shadowRoot.getElementById('new-file-path-input');
+    const newFileModalOverlay = this.shadowRoot.getElementById('new-file-modal-overlay');
+    
+    let filePath = newFilePathInput.value.trim();
+    
+    if (!filePath) {
+      alert('Please enter a file path');
+      newFilePathInput.focus();
+      return;
+    }
+    
+    // Basic validation
+    if (filePath.startsWith('/')) {
+      filePath = filePath.substring(1);
+    }
+    if (filePath.endsWith('/')) {
+      alert('Please include a filename, not just a folder path');
+      return;
+    }
+    
+    // Ensure it has .tab extension
+    if (!filePath.toLowerCase().endsWith('.tab')) {
+      filePath += '.tab';
+    }
+    
+    // Check we have repo context
+    if (!this.provider || !this.owner || !this.repo) {
+      alert('Please load a repository first');
+      return;
+    }
+    
+    // Check for access token (needed for committing)
+    if (!this.accessToken) {
+      alert('Access token required to create files. Please set repo type to Private and add an access token.');
+      return;
+    }
+    
+    // Close the modal and the repo browser
+    newFileModalOverlay.classList.remove('open');
+    this.close();
+    
+    // Dispatch event for tab-viewer to set up new tab
+    window.dispatchEvent(new CustomEvent('new-tab-from-repo', {
+      detail: {
+        filePath: filePath,
+        provider: this.provider,
+        owner: this.owner,
+        repo: this.repo,
+        branch: this.branch,
+        hostname: this.hostname
+      }
+    }));
   }
 
   /**
@@ -964,6 +1229,11 @@ class RepoBrowser extends HTMLElement {
 
   renderLoading() {
     const fileList = this.shadowRoot.getElementById('file-list');
+    const newFileSection = this.shadowRoot.getElementById('new-file-section');
+    
+    // Hide new file section while loading
+    newFileSection.classList.remove('visible');
+    
     fileList.innerHTML = `
       <div class="loading">
         <div class="spinner"></div>
@@ -984,10 +1254,22 @@ class RepoBrowser extends HTMLElement {
 
   renderContents() {
     const fileList = this.shadowRoot.getElementById('file-list');
+    const newFileSection = this.shadowRoot.getElementById('new-file-section');
     
     if (this.contents.length === 0) {
       this.renderEmpty();
+      // Still show new file button even if folder is empty
+      if (this.provider && this.accessToken) {
+        newFileSection.classList.add('visible');
+      }
       return;
+    }
+
+    // Show new file button when repo is loaded and we have a token
+    if (this.provider && this.accessToken) {
+      newFileSection.classList.add('visible');
+    } else {
+      newFileSection.classList.remove('visible');
     }
 
     fileList.innerHTML = this.contents.map(item => {

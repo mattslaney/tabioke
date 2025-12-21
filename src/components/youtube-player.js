@@ -760,6 +760,11 @@ class YoutubePlayer extends HTMLElement {
     const loopStart = this.shadowRoot.getElementById('loop-start');
     const loopEnd = this.shadowRoot.getElementById('loop-end');
 
+    // Listen for clear-youtube event (when creating a new tab)
+    window.addEventListener('clear-youtube', () => {
+      this.clearPlayer();
+    });
+
     // Helper function for reliable button clicks on mobile
     const addButtonHandler = (element, handler) => {
       let touchHandled = false;
@@ -998,6 +1003,47 @@ class YoutubePlayer extends HTMLElement {
     }
   }
 
+  /**
+   * Clear the player and reset to initial state
+   */
+  clearPlayer() {
+    const urlInput = this.shadowRoot.getElementById('url-input');
+    const placeholder = this.shadowRoot.getElementById('placeholder');
+    const playerWrapper = this.shadowRoot.getElementById('player-wrapper');
+    
+    // Clear the URL input
+    urlInput.value = '';
+    this.videoId = null;
+    this.duration = 0;
+    this.currentTime = 0;
+    
+    // Stop and destroy the player
+    if (this.player) {
+      try {
+        this.player.stopVideo();
+        this.player.destroy();
+      } catch (e) {
+        // Ignore errors if player is already destroyed
+      }
+      this.player = null;
+    }
+    
+    // Reset the player wrapper
+    playerWrapper.innerHTML = '<div id="yt-player"></div>';
+    
+    // Show placeholder
+    placeholder.classList.remove('hidden');
+    
+    // Reset status
+    this.setStatus('idle', 'Paste YouTube URL');
+    
+    // Reset time display
+    this.updateTimeDisplay();
+    
+    // Disable controls
+    this.disableControls();
+  }
+
   onPlayerReady(event) {
     this.setStatus('ready', 'Video loaded');
     this.duration = this.player.getDuration();
@@ -1047,6 +1093,11 @@ class YoutubePlayer extends HTMLElement {
   enableControls() {
     const controls = this.shadowRoot.querySelectorAll('.control-btn, .speed-select');
     controls.forEach(ctrl => ctrl.disabled = false);
+  }
+
+  disableControls() {
+    const controls = this.shadowRoot.querySelectorAll('.control-btn, .speed-select');
+    controls.forEach(ctrl => ctrl.disabled = true);
   }
 
   onPlayerStateChange(event) {

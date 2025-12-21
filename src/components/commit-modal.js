@@ -17,6 +17,7 @@ class CommitModal extends HTMLElement {
     this.branch = null;
     this.hostname = 'gitlab.com';
     this.accessToken = null;
+    this.isNewFile = false; // Track whether we're creating a new file
   }
 
   connectedCallback() {
@@ -250,6 +251,34 @@ class CommitModal extends HTMLElement {
           font-family: monospace;
           font-size: 0.7rem;
         }
+
+        .file-path-input {
+          width: 100%;
+          font-family: monospace;
+          font-size: 0.85rem;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          padding: 8px 12px;
+          color: var(--text-primary);
+          box-sizing: border-box;
+          display: none;
+        }
+
+        .file-path-input:focus {
+          outline: none;
+          border-color: var(--accent-primary);
+        }
+
+        .file-path-input::placeholder {
+          color: var(--text-muted);
+        }
+
+        .file-path-hint {
+          font-size: 0.7rem;
+          color: var(--text-muted);
+          margin-top: 4px;
+        }
       </style>
 
       <div class="modal-overlay" id="modal-overlay">
@@ -260,7 +289,8 @@ class CommitModal extends HTMLElement {
           </div>
           <div class="modal-body">
             <div class="file-info">
-              <div>Committing: <span class="file-name" id="file-name"></span></div>
+              <div>Committing: <span class="file-name" id="file-name"></span><input type="text" class="file-path-input" id="file-path-input" placeholder="e.g. Artist/Song Name.tab"></div>
+              <div class="file-path-hint" id="file-path-hint" style="display: none;">Use folder/filename.tab format to create in a folder</div>
               <div class="repo-info" id="repo-info"></div>
             </div>
             
@@ -342,6 +372,7 @@ class CommitModal extends HTMLElement {
     this.repo = data.repo;
     this.branch = data.branch;
     this.accessToken = data.accessToken;
+    this.isNewFile = data.isNewFile || false;
     
     if (this.provider === 'gitlab') {
       this.hostname = data.hostname || 'gitlab.com';
@@ -352,12 +383,29 @@ class CommitModal extends HTMLElement {
     overlay.classList.add('open');
 
     // Update UI
-    this.shadowRoot.getElementById('file-name').textContent = this.fileName;
+    const fileNameEl = this.shadowRoot.getElementById('file-name');
+    const filePathInput = this.shadowRoot.getElementById('file-path-input');
+    const filePathHint = this.shadowRoot.getElementById('file-path-hint');
+    
+    if (this.isNewFile) {
+      // For new files, show editable path input
+      fileNameEl.style.display = 'none';
+      filePathInput.style.display = 'block';
+      filePathInput.value = this.filePath || '';
+      filePathHint.style.display = 'block';
+    } else {
+      // For existing files, show read-only file name
+      fileNameEl.style.display = 'inline';
+      filePathInput.style.display = 'none';
+      fileNameEl.textContent = this.fileName;
+      filePathHint.style.display = 'none';
+    }
+    
     this.shadowRoot.getElementById('repo-info').textContent = 
       `${this.owner}/${this.repo} (${this.branch})`;
     
     const commitMessageInput = this.shadowRoot.getElementById('commit-message');
-    commitMessageInput.value = `Update ${this.fileName}`;
+    commitMessageInput.value = this.isNewFile ? `Add ${this.fileName || 'new file'}` : `Update ${this.fileName}`;
 
     // Hide status
     const statusEl = this.shadowRoot.getElementById('status-message');
@@ -365,8 +413,12 @@ class CommitModal extends HTMLElement {
 
     // Focus and select commit message
     setTimeout(() => {
-      commitMessageInput.focus();
-      commitMessageInput.select();
+      if (this.isNewFile && !this.filePath) {
+        filePathInput.focus();
+      } else {
+        commitMessageInput.focus();
+        commitMessageInput.select();
+      }
     }, 100);
   }
 
@@ -385,20 +437,59 @@ class CommitModal extends HTMLElement {
       return;
     }
 
+    // For new files, read the file path from input
+    if (this.isNewFile) {
+      const filePathInput = this.shadowRoot.getElementById('file-path-input');
+      const newPath = filePathInput.value.trim();
+      
+      if (!newPath) {
+        this.showStatus('Please enter a file path', 'error');
+        filePathInput.focus();
+        return;
+      }
+      
+      // Basic validation
+      if (newPath.startsWith('/') || newPath.endsWith('/')) {
+        this.showStatus('File path should not start or end with /', 'error');
+        return;
+      }
+      
+      this.filePath = newPath;
+      this.fileName = newPath.split('/').pop();
+    }
+
     const commitBtn = this.shadowRoot.getElementById('commit-btn');
     commitBtn.disabled = true;
     commitBtn.textContent = '⏳ Committing...';
 
     try {
+      let result;
       if (this.provider === 'github') {
-        await this.commitToGitHub(commitMessage);
+        result = await this.commitToGitHub(commitMessage);
       } else if (this.provider === 'gitlab') {
-        await this.commitToGitLab(commitMessage);
+        result = await this.commitToGitLab(commitMessage);
       } else {
         throw new Error('Unknown provider');
       }
 
       this.showStatus('✓ Changes committed successfully!', 'success');
+      
+      // Dispatch commit-success event with file info so tab-viewer can update its state
+      window.dispatchEvent(new CustomEvent('commit-success', {
+        detail: {
+          filePath: this.filePath,
+          fileName: this.fileName,
+          provider: this.provider,
+          owner: this.owner,
+          repo: this.repo,
+          branch: this.branch,
+          hostname: this.hostname,
+          content: this.content,
+          isNewFile: this.isNewFile,
+          // Include the SHA from the response for future updates
+          sha: result?.content?.sha || null
+        }
+      }));
       
       // Close after 1.5 seconds
       setTimeout(() => {
@@ -422,69 +513,75 @@ class CommitModal extends HTMLElement {
     // URL-encode the file path (handles spaces and special characters)
     const encodedPath = this.filePath.split('/').map(segment => encodeURIComponent(segment)).join('/');
     
-    // Get the current file SHA (required for updates)
     const apiUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/contents/${encodedPath}`;
     
-    console.log('Fetching file metadata from:', apiUrl);
-    
     let fileSha = null;
-    try {
-      // Fetch file metadata to get the SHA
-      // Add cache-busting timestamp to avoid browser returning cached raw content
-      // when we need JSON metadata (browser may cache based on URL, ignoring Vary: Accept)
-      // Note: Cache-Control header is not allowed by GitHub CORS policy, so we rely on the timestamp
-      const cacheBuster = `_t=${Date.now()}`;
-      const fileResponse = await fetch(apiUrl + `?ref=${encodeURIComponent(this.branch)}&${cacheBuster}`, { 
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28'
-        }
-      });
+    
+    // For existing files, we need to fetch the SHA
+    // For new files, we skip this step
+    if (!this.isNewFile) {
+      console.log('Fetching file metadata from:', apiUrl);
       
-      console.log('GitHub API response status:', fileResponse.status);
-      console.log('Content-Type:', fileResponse.headers.get('content-type'));
-      
-      if (fileResponse.ok) {
-        const contentType = fileResponse.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          const text = await fileResponse.text();
-          console.error('Non-JSON response received. Content-Type:', contentType);
-          console.error('Response preview:', text.substring(0, 200));
-          throw new Error(`GitHub returned non-JSON response (${contentType}). The file may be too large or the API request format is incorrect.`);
-        }
+      try {
+        // Fetch file metadata to get the SHA
+        // Add cache-busting timestamp to avoid browser returning cached raw content
+        // when we need JSON metadata (browser may cache based on URL, ignoring Vary: Accept)
+        // Note: Cache-Control header is not allowed by GitHub CORS policy, so we rely on the timestamp
+        const cacheBuster = `_t=${Date.now()}`;
+        const fileResponse = await fetch(apiUrl + `?ref=${encodeURIComponent(this.branch)}&${cacheBuster}`, { 
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
+          }
+        });
         
-        const fileData = await fileResponse.json();
+        console.log('GitHub API response status:', fileResponse.status);
+        console.log('Content-Type:', fileResponse.headers.get('content-type'));
         
-        // GitHub API returns a file object with sha field
-        if (fileData.sha) {
-          fileSha = fileData.sha;
-          console.log('Got SHA from file metadata:', fileSha);
+        if (fileResponse.ok) {
+          const contentType = fileResponse.headers.get('content-type') || '';
+          if (!contentType.includes('application/json')) {
+            const text = await fileResponse.text();
+            console.error('Non-JSON response received. Content-Type:', contentType);
+            console.error('Response preview:', text.substring(0, 200));
+            throw new Error(`GitHub returned non-JSON response (${contentType}). The file may be too large or the API request format is incorrect.`);
+          }
+          
+          const fileData = await fileResponse.json();
+          
+          // GitHub API returns a file object with sha field
+          if (fileData.sha) {
+            fileSha = fileData.sha;
+            console.log('Got SHA from file metadata:', fileSha);
+          } else {
+            console.warn('Unexpected response structure:', fileData);
+            throw new Error('Could not extract SHA from GitHub response');
+          }
+        } else if (fileResponse.status === 404) {
+          throw new Error('File not found in repository. Please reload the file from the repository browser.');
         } else {
-          console.warn('Unexpected response structure:', fileData);
-          throw new Error('Could not extract SHA from GitHub response');
+          const errorText = await fileResponse.text();
+          console.error(`GitHub API error (${fileResponse.status}):`, errorText);
+          throw new Error(`Failed to fetch file metadata: ${fileResponse.status}`);
         }
-      } else if (fileResponse.status === 404) {
-        throw new Error('File not found in repository. Please reload the file from the repository browser.');
-      } else {
-        const errorText = await fileResponse.text();
-        console.error(`GitHub API error (${fileResponse.status}):`, errorText);
-        throw new Error(`Failed to fetch file metadata: ${fileResponse.status}`);
+      } catch (fetchError) {
+        if (fetchError.message && (fetchError.message.includes('File not found') || fetchError.message.includes('Failed to fetch'))) {
+          throw fetchError;
+        }
+        console.error('Error fetching file metadata:', fetchError);
+        throw new Error(`Unable to get file SHA: ${fetchError.message}`);
       }
-    } catch (fetchError) {
-      if (fetchError.message && (fetchError.message.includes('File not found') || fetchError.message.includes('Failed to fetch'))) {
-        throw fetchError;
+
+      if (!fileSha) {
+        throw new Error('Unable to retrieve file SHA from GitHub. Please reload the file from the repository browser.');
       }
-      console.error('Error fetching file metadata:', fetchError);
-      throw new Error(`Unable to get file SHA: ${fetchError.message}`);
-    }
 
-    if (!fileSha) {
-      throw new Error('Unable to retrieve file SHA from GitHub. Please reload the file from the repository browser.');
+      console.log('Committing with SHA:', fileSha.substring(0, 10) + '...');
+    } else {
+      console.log('Creating new file:', this.filePath);
     }
-
-    console.log('Committing with SHA:', fileSha.substring(0, 10) + '...');
 
     // Commit the file using GitHub Contents API
     const content = btoa(unescape(encodeURIComponent(this.content))); // Base64 encode UTF-8
@@ -492,9 +589,13 @@ class CommitModal extends HTMLElement {
     const commitData = {
       message: commitMessage,
       content: content,
-      branch: this.branch,
-      sha: fileSha
+      branch: this.branch
     };
+    
+    // Only include SHA for updates (not for new files)
+    if (fileSha) {
+      commitData.sha = fileSha;
+    }
 
     const commitResponse = await fetch(apiUrl, {
       method: 'PUT',
@@ -544,11 +645,15 @@ class CommitModal extends HTMLElement {
     const projectId = encodeURIComponent(`${this.owner}/${this.repo}`);
     const filePathEncoded = encodeURIComponent(this.filePath);
     
-    // Check if file exists
-    const fileUrl = `https://${this.hostname}/api/v4/projects/${projectId}/repository/files/${filePathEncoded}?ref=${this.branch}`;
-    const fileResponse = await fetch(fileUrl, { headers });
+    let fileExists = false;
     
-    const fileExists = fileResponse.ok;
+    // For new files, skip the existence check
+    // For existing files, check if file exists to determine HTTP method
+    if (!this.isNewFile) {
+      const fileUrl = `https://${this.hostname}/api/v4/projects/${projectId}/repository/files/${filePathEncoded}?ref=${this.branch}`;
+      const fileResponse = await fetch(fileUrl, { headers });
+      fileExists = fileResponse.ok;
+    }
     
     // Commit using GitLab Repository Files API
     const commitUrl = `https://${this.hostname}/api/v4/projects/${projectId}/repository/files/${filePathEncoded}`;
@@ -559,6 +664,7 @@ class CommitModal extends HTMLElement {
       commit_message: commitMessage
     };
 
+    // POST for new files, PUT for updates
     const method = fileExists ? 'PUT' : 'POST';
 
     const commitResponse = await fetch(commitUrl, {
