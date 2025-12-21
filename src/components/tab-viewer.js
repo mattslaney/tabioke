@@ -22,6 +22,46 @@ class TabViewer extends HTMLElement {
     this.setupEventListeners();
   }
 
+  /**
+   * Parse timestamps from tab content
+   * Supports formats: @mm:ss, @m:ss, @h:mm:ss, @hh:mm:ss
+   * @param {string} content - Tab content
+   * @returns {Array} - Array of { time: seconds, lineNumber: number }
+   */
+  parseTimestamps(content) {
+    const lines = content.split('\n');
+    const timestamps = [];
+    const timestampRegex = /@(\d{1,2}):(\d{2})(?::(\d{2}))?/g;
+    
+    lines.forEach((line, index) => {
+      const matches = [...line.matchAll(timestampRegex)];
+      matches.forEach(match => {
+        let seconds = 0;
+        
+        if (match[3]) {
+          // Format: @h:mm:ss or @hh:mm:ss
+          const hours = parseInt(match[1]);
+          const minutes = parseInt(match[2]);
+          const secs = parseInt(match[3]);
+          seconds = hours * 3600 + minutes * 60 + secs;
+        } else {
+          // Format: @m:ss or @mm:ss
+          const minutes = parseInt(match[1]);
+          const secs = parseInt(match[2]);
+          seconds = minutes * 60 + secs;
+        }
+        
+        timestamps.push({
+          time: seconds,
+          lineNumber: index
+        });
+      });
+    });
+    
+    // Sort by time
+    return timestamps.sort((a, b) => a.time - b.time);
+  }
+
   render() {
     this.shadowRoot.innerHTML = `
       <style>
@@ -243,6 +283,15 @@ class TabViewer extends HTMLElement {
 
         .line-blank {
           color: transparent;
+        }
+
+        .timestamp {
+          color: #6b7280; /* Subdued grey for timestamps */
+        }
+
+        .comment {
+          color: #16a34a; /* Dark green for comments */
+          font-style: italic;
         }
 
         /* When highlighting is disabled */
@@ -731,24 +780,60 @@ Some lyrics here to sing along with"
     const lines = text.split('\n');
     
     const highlightedLines = lines.map(line => {
-      const escaped = this.escapeHtml(line);
+      // Check for timestamps and comments first
+      const timestampRegex = /@\d{1,2}:\d{2}(?::\d{2})?/g;
+      const commentIndex = line.indexOf('//');
       
-      if (line.trim() === '') {
-        return `<span class="line-blank">${escaped || ' '}</span>`;
-      } else if (this.isMetadataLine(line)) {
-        return `<span class="line-metadata">${escaped}</span>`;
-      } else if (this.isSectionMarker(line)) {
-        return `<span class="line-section">${escaped}</span>`;
-      } else if (this.isTablatureLine(line)) {
-        return `<span class="line-tab">${escaped}</span>`;
-      } else if (this.isChordLine(line)) {
-        return `<span class="line-chord">${escaped}</span>`;
-      } else {
-        return `<span class="line-lyric">${escaped}</span>`;
+      let processedLine = line;
+      let htmlLine = '';
+      
+      // Handle comments (but not in metadata lines)
+      if (commentIndex !== -1 && !this.isMetadataLine(line)) {
+        const beforeComment = processedLine.substring(0, commentIndex);
+        const comment = processedLine.substring(commentIndex);
+        
+        // Process the part before comment
+        htmlLine = this.highlightLineContent(beforeComment);
+        // Add the comment
+        htmlLine += `<span class="comment">${this.escapeHtml(comment)}</span>`;
+        
+        return htmlLine;
       }
+      
+      // Handle timestamps
+      if (timestampRegex.test(line)) {
+        const escaped = this.escapeHtml(line);
+        return `<span class="timestamp">${escaped}</span>`;
+      }
+      
+      // Regular highlighting
+      return this.highlightLineContent(line);
     });
     
     highlightLayer.innerHTML = highlightedLines.join('\n');
+  }
+
+  /**
+   * Apply syntax highlighting to line content
+   * @param {string} line - Line to highlight
+   * @returns {string} - HTML string with highlighting
+   */
+  highlightLineContent(line) {
+    const escaped = this.escapeHtml(line);
+    
+    if (line.trim() === '') {
+      return `<span class="line-blank">${escaped || ' '}</span>`;
+    } else if (this.isMetadataLine(line)) {
+      return `<span class="line-metadata">${escaped}</span>`;
+    } else if (this.isSectionMarker(line)) {
+      return `<span class="line-section">${escaped}</span>`;
+    } else if (this.isTablatureLine(line)) {
+      return `<span class="line-tab">${escaped}</span>`;
+    } else if (this.isChordLine(line)) {
+      return `<span class="line-chord">${escaped}</span>`;
+    } else {
+      return `<span class="line-lyric">${escaped}</span>`;
+    }
   }
 
   /**
@@ -786,10 +871,71 @@ Some lyrics here to sing along with"
 
       // Only auto-scroll if we're in auto-scroll mode
       if (this.isAutoScrolling) {
-        const scrollPos = scrollHeight * progress;
-        tabArea.scrollTop = scrollPos;
-        if (highlightLayer) {
-          highlightLayer.scrollTop = scrollPos;
+        // Parse timestamps from content
+        const timestamps = this.parseTimestamps(tabArea.value);
+        
+        if (timestamps.length > 0) {
+          // Timestamp-based smooth scrolling with variable speed
+          const lines = tabArea.value.split('\n');
+          const lineHeight = tabArea.scrollHeight / lines.length;
+          const middleThirdStart = tabArea.clientHeight / 3;
+          
+          // Find current and next timestamps
+          let currentTimestampIndex = -1;
+          let nextTimestampIndex = -1;
+          
+          for (let i = 0; i < timestamps.length; i++) {
+            if (timestamps[i].time <= currentTime) {
+              currentTimestampIndex = i;
+            } else {
+              nextTimestampIndex = i;
+              break;
+            }
+          }
+          
+          let scrollPos;
+          
+          if (nextTimestampIndex !== -1) {
+            // We have a next timestamp - interpolate between current and next
+            const currentTimestamp = currentTimestampIndex >= 0 ? timestamps[currentTimestampIndex] : { time: 0, lineNumber: 0 };
+            const nextTimestamp = timestamps[nextTimestampIndex];
+            
+            // Calculate positions for both timestamps (positioned at top of middle third)
+            const currentPos = (currentTimestamp.lineNumber * lineHeight) - middleThirdStart;
+            const nextPos = (nextTimestamp.lineNumber * lineHeight) - middleThirdStart;
+            
+            // Calculate progress between timestamps
+            const timeDiff = nextTimestamp.time - currentTimestamp.time;
+            const timeProgress = timeDiff > 0 ? (currentTime - currentTimestamp.time) / timeDiff : 0;
+            
+            // Smoothly interpolate scroll position
+            scrollPos = currentPos + (nextPos - currentPos) * timeProgress;
+          } else if (currentTimestampIndex >= 0) {
+            // Past the last timestamp - stay at the last timestamp position
+            const lastTimestamp = timestamps[currentTimestampIndex];
+            scrollPos = (lastTimestamp.lineNumber * lineHeight) - middleThirdStart;
+          } else {
+            // Before first timestamp - scroll from top to first timestamp
+            const firstTimestamp = timestamps[0];
+            const firstPos = (firstTimestamp.lineNumber * lineHeight) - middleThirdStart;
+            const timeProgress = firstTimestamp.time > 0 ? currentTime / firstTimestamp.time : 0;
+            scrollPos = firstPos * timeProgress;
+          }
+          
+          // Clamp to valid scroll range
+          scrollPos = Math.max(0, Math.min(scrollPos, scrollHeight));
+          
+          tabArea.scrollTop = scrollPos;
+          if (highlightLayer) {
+            highlightLayer.scrollTop = scrollPos;
+          }
+        } else {
+          // No timestamps - use normal time-based scrolling
+          const scrollPos = scrollHeight * progress;
+          tabArea.scrollTop = scrollPos;
+          if (highlightLayer) {
+            highlightLayer.scrollTop = scrollPos;
+          }
         }
       }
     }
@@ -926,6 +1072,7 @@ Some lyrics here to sing along with"
     
     const result = [];
     const STRINGS_PER_TAB = 6; // Assuming standard 6-string guitar
+    const timestampRegex = /@\d{1,2}:\d{2}(?::\d{2})?/;
     let consecutiveTabLines = 0;
     
     for (let i = 0; i < nonBlankLines.length; i++) {
@@ -933,12 +1080,19 @@ Some lyrics here to sing along with"
       const isSection = this.isSectionMarker(line);
       const isChord = this.isChordLine(line);
       const isTab = this.isTablatureLine(line);
+      const isTimestamp = timestampRegex.test(line);
       const prevLine = i > 0 ? nonBlankLines[i - 1] : null;
       const prevWasChord = prevLine ? this.isChordLine(prevLine) : false;
       const prevWasTab = prevLine ? this.isTablatureLine(prevLine) : false;
+      const prevWasSection = prevLine ? this.isSectionMarker(prevLine) : false;
       
+      // Add blank line before timestamps (unless after section marker or first line)
+      if (isTimestamp && i > 0 && !prevWasSection) {
+        result.push('');
+        consecutiveTabLines = 0;
+      }
       // Add two blank lines before section markers (unless first line)
-      if (isSection && i > 0) {
+      else if (isSection && i > 0) {
         result.push('');
         result.push('');
         consecutiveTabLines = 0;
