@@ -289,3 +289,46 @@ label {
     grid-template-rows: 1fr 1fr;
   }
 }
+
+/* Mobile and Tablet Portrait */
+@media (max-width: 768px) {
+  body {
+    overflow-y: auto;
+  }
+
+  .app-container {
+    height: auto;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: var(--panel-gap);
+  }
+  
+  /* Tab viewer first - takes most space */
+  .panel-tab {
+    order: 1;
+    min-height: 400px;
+    flex: 1;
+  }
+  
+  /* YouTube second - compact controls only */
+  .panel-video {
+    order: 2;
+    height: auto;
+    min-height: 0;
+  }
+  
+  /* Metronome third - very compact */
+  .panel-metronome {
+    order: 3;
+    height: auto;
+    min-height: 0;
+  }
+  
+  .right-panels {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    gap: var(--panel-gap);
+  }
+}

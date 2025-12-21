@@ -563,6 +563,98 @@ class MetronomeApp extends HTMLElement {
           background: var(--accent-primary);
           color: var(--bg-primary);
         }
+
+        /* Mobile and Tablet Portrait - Compact 2-line layout */
+        @media (max-width: 768px) {
+          .header {
+            padding: 4px 8px;
+          }
+
+          .title {
+            font-size: 0.7rem;
+          }
+
+          .content {
+            padding: 6px 8px;
+            gap: 6px;
+            overflow: visible;
+          }
+
+          /* Hide beat visualization on mobile */
+          .beat-display {
+            display: none;
+          }
+
+          /* Compact tempo display - single line */
+          .tempo-display {
+            padding: 6px 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+
+          .tempo-row {
+            gap: 4px;
+            flex: 0 0 auto;
+          }
+
+          .tempo-value {
+            font-size: 1.5rem;
+            width: 60px;
+            min-width: 60px;
+          }
+
+          .tempo-label {
+            font-size: 0.6rem;
+          }
+
+          .tempo-adjusted {
+            font-size: 0.6rem;
+          }
+
+          .tempo-slider {
+            flex: 1;
+            margin: 0;
+          }
+
+          /* Hide extra controls */
+          .controls-row,
+          .checkbox-row {
+            display: none;
+          }
+
+          /* Compact play section */
+          .play-section {
+            gap: 4px;
+          }
+
+          .play-btn {
+            padding: 6px 10px;
+            font-size: 0.75rem;
+          }
+
+          .tap-btn {
+            width: 44px;
+            padding: 6px;
+            font-size: 0.65rem;
+          }
+
+          .play-icon {
+            width: 12px;
+            height: 12px;
+          }
+
+          .play-icon.play-triangle {
+            border-left-width: 8px;
+            border-top-width: 5px;
+            border-bottom-width: 5px;
+          }
+
+          .play-icon.stop-square {
+            width: 10px;
+            height: 10px;
+          }
+        }
       </style>
 
       <div class="header">

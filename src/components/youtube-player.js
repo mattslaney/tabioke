@@ -559,6 +559,91 @@ class YoutubePlayer extends HTMLElement {
         .hidden {
           display: none !important;
         }
+
+        /* Mobile and Tablet Portrait - Hide video, show only controls */
+        @media (max-width: 768px) {
+          .player-container {
+            display: none;
+          }
+
+          .content {
+            flex: 0;
+            min-height: 0;
+          }
+
+          .header {
+            padding: 4px 8px;
+          }
+
+          .title {
+            font-size: 0.7rem;
+          }
+
+          .url-input-container {
+            padding: 4px 8px;
+            gap: 4px;
+          }
+
+          .url-input {
+            font-size: 0.7rem;
+            padding: 4px 6px;
+          }
+
+          .load-btn {
+            font-size: 0.7rem;
+            padding: 4px 8px;
+          }
+
+          .controls-bar {
+            padding: 4px 8px;
+            gap: 4px;
+          }
+
+          .control-btn {
+            width: 24px;
+            height: 24px;
+            font-size: 0.75rem;
+          }
+
+          .speed-control {
+            padding: 2px 6px;
+          }
+
+          .speed-label {
+            font-size: 0.55rem;
+          }
+
+          .speed-select {
+            font-size: 0.65rem;
+          }
+
+          .time-display {
+            font-size: 0.65rem;
+          }
+
+          .loop-bar {
+            padding: 4px 8px;
+            gap: 6px;
+          }
+
+          .loop-checkbox {
+            width: 12px;
+            height: 12px;
+          }
+
+          .loop-label {
+            font-size: 0.6rem;
+          }
+
+          .loop-times {
+            font-size: 0.6rem;
+          }
+
+          .status-bar {
+            padding: 2px 8px;
+            font-size: 0.55rem;
+          }
+        }
       </style>
 
       <div class="header">
