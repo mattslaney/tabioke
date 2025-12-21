@@ -1142,7 +1142,7 @@ Some lyrics here to sing along with"
    */
   isChord(word) {
     // Chord pattern: Root note (A-G) + optional sharp/flat + optional quality + optional number + optional bass note
-    const chordPattern = /^[A-Ga-g][#b♯♭]?(m|M|maj|min|dim|aug|sus|add|dom)?[0-9]*(\/[A-Ga-g][#b♯♭]?)?$/;
+    const chordPattern = /^[A-Ga-g][#b♯♭]?(m|M|maj|min|dim|aug|sus|add|dom)?[0-9]*(\/[A-Ga-g][#b♯♭]?)?\*?$/;
     return chordPattern.test(word);
   }
 
@@ -1531,10 +1531,13 @@ Some lyrics here to sing along with"
     // Create template with standard headers
     const template = `Title: 
 Artist: 
-Tempo: 120
-Timing: 4/4
 YoutubeUrl: 
-YoutubeOffset: 0
+YoutubeOffset: 0.00
+Tempo: 
+Timing: 4/4
+Tuning: E A D G B E
+Key: 
+Capo: 0
 
 ---
 
