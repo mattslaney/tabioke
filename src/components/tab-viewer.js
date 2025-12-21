@@ -154,14 +154,19 @@ class TabViewer extends HTMLElement {
 
         .content {
           flex: 1;
+          min-height: 0;
           overflow: hidden;
           position: relative;
+          display: flex;
+          flex-direction: column;
         }
 
         .editor-container {
           position: relative;
           width: 100%;
           height: 100%;
+          flex: 1;
+          min-height: 0;
         }
 
         .highlight-layer {

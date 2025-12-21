@@ -92,16 +92,31 @@ body {
   flex-direction: column;
 }
 
+tab-viewer {
+  flex: 1;
+  min-height: 0;
+}
+
 /* ===== Video Panel ===== */
 .panel-video {
   display: flex;
   flex-direction: column;
 }
 
+youtube-player {
+  flex: 1;
+  min-height: 0;
+}
+
 /* ===== Metronome Panel ===== */
 .panel-metronome {
   display: flex;
   flex-direction: column;
+}
+
+metronome-app {
+  flex: 1;
+  min-height: 0;
 }
 
 /* ===== Shared Component Styles ===== */
@@ -279,7 +294,7 @@ label {
 }
 
 /* ===== Responsive ===== */
-@media (max-width: 1024px) {
+@media (max-width: 900px) {
   .app-container {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr 1fr;
@@ -311,24 +326,69 @@ label {
     flex: 1;
   }
   
+  /* Right panels container after tab viewer */
+  .right-panels {
+    order: 2;
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    gap: var(--panel-gap);
+  }
+  
   /* YouTube second - compact controls only */
   .panel-video {
-    order: 2;
+    order: unset;
     height: auto;
     min-height: 0;
   }
   
   /* Metronome third - very compact */
   .panel-metronome {
-    order: 3;
+    order: unset;
     height: auto;
     min-height: 0;
   }
+}
+
+/* Mobile Landscape - side-by-side layout */
+@media (max-width: 768px) and (orientation: landscape) {
+  body {
+    overflow: hidden;
+  }
+
+  .app-container {
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr;
+  }
   
+  /* Tab viewer on the left */
+  .panel-tab {
+    order: unset;
+    min-height: unset;
+    height: 100%;
+  }
+  
+  /* Right panels container */
   .right-panels {
-    display: flex;
-    flex-direction: column;
-    height: auto;
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    height: 100%;
     gap: var(--panel-gap);
+  }
+  
+  /* YouTube at top right */
+  .panel-video {
+    order: unset;
+    height: 100%;
+    min-height: unset;
+  }
+  
+  /* Metronome at bottom right */
+  .panel-metronome {
+    order: unset;
+    height: 100%;
+    min-height: unset;
   }
 }

@@ -431,6 +431,30 @@ class RepoBrowser extends HTMLElement {
           color: var(--text-secondary);
           margin-left: 8px;
         }
+
+        /* Responsive styles */
+        @media (max-width: 480px) {
+          .url-input-row,
+          .token-input-row {
+            flex-wrap: wrap;
+          }
+
+          .repo-type-select {
+            flex: 0 0 auto;
+            min-width: 90px;
+          }
+
+          .url-input {
+            flex: 1 1 100%;
+            min-width: 0;
+          }
+
+          .load-btn,
+          .delete-token-btn {
+            flex: 1 1 auto;
+            min-width: 80px;
+          }
+        }
       </style>
 
       <div class="modal-overlay" id="modal-overlay">
