@@ -13,6 +13,7 @@ class RepoBrowser extends HTMLElement {
     this.owner = '';
     this.repo = '';
     this.branch = 'main';
+    this.branches = []; // Available branches
     this.currentPath = '';
     this.pathHistory = [];
     this.isLoading = false;
@@ -35,6 +36,11 @@ class RepoBrowser extends HTMLElement {
         this.repoUrl = savedRepoUrl;
         const urlInput = this.shadowRoot.getElementById('repo-url-input');
         if (urlInput) urlInput.value = savedRepoUrl;
+      }
+      
+      const savedBranch = localStorage.getItem('tabioke-repo-branch');
+      if (savedBranch) {
+        this.branch = savedBranch;
       }
       
       const savedToken = localStorage.getItem('tabioke-access-token');
@@ -66,6 +72,9 @@ class RepoBrowser extends HTMLElement {
     try {
       if (this.repoUrl) {
         localStorage.setItem('tabioke-repo-url', this.repoUrl);
+      }
+      if (this.branch) {
+        localStorage.setItem('tabioke-repo-branch', this.branch);
       }
       localStorage.setItem('tabioke-repo-type', this.repoType);
       
@@ -193,6 +202,35 @@ class RepoBrowser extends HTMLElement {
           display: flex;
           gap: 8px;
           margin-top: 12px;
+        }
+
+        .branch-input-row {
+          display: flex;
+          gap: 8px;
+          margin-top: 12px;
+          align-items: center;
+        }
+
+        .branch-select {
+          font-family: var(--font-display);
+          font-size: 0.8rem;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          padding: 10px 12px;
+          color: var(--text-primary);
+          cursor: pointer;
+          flex: 1;
+        }
+
+        .branch-select:focus {
+          outline: none;
+          border-color: var(--accent-primary);
+        }
+
+        .branch-select:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
         }
 
         .delete-token-btn {
@@ -435,7 +473,8 @@ class RepoBrowser extends HTMLElement {
         /* Responsive styles */
         @media (max-width: 480px) {
           .url-input-row,
-          .token-input-row {
+          .token-input-row,
+          .branch-input-row {
             flex-wrap: wrap;
           }
 
@@ -492,6 +531,12 @@ class RepoBrowser extends HTMLElement {
                   style="flex: 1;"
                 >
                 <button class="delete-token-btn" id="delete-token-btn" title="Delete token">Delete</button>
+              </div>
+              <div class="branch-input-row" id="branch-section" style="display: none;">
+                <label class="url-label" style="margin: 0; flex: 0 0 auto; align-self: center; min-width: 50px;">Branch</label>
+                <select class="branch-select" id="branch-select" disabled>
+                  <option value="">Loading branches...</option>
+                </select>
               </div>
               <div class="error-message" id="error-message" style="display: none;"></div>
             </div>
@@ -570,6 +615,20 @@ class RepoBrowser extends HTMLElement {
         this.accessToken = '';
         tokenInput.value = '';
         localStorage.removeItem('tabioke-access-token');
+      }
+    });
+
+    // Branch selector
+    const branchSelect = this.shadowRoot.getElementById('branch-select');
+    branchSelect.addEventListener('change', async (e) => {
+      const newBranch = e.target.value;
+      if (newBranch && newBranch !== this.branch) {
+        this.branch = newBranch;
+        this.saveToStorage();
+        // Reset to root path when switching branches
+        this.currentPath = '';
+        this.pathHistory = [];
+        await this.fetchContents(this.currentPath);
       }
     });
 
@@ -689,11 +748,86 @@ class RepoBrowser extends HTMLElement {
       // Save to localStorage
       this.saveToStorage();
 
+      // Fetch branches and populate dropdown
+      await this.fetchBranches();
+
       // Load contents
       await this.fetchContents(this.currentPath);
 
     } catch (e) {
       this.showError(e.message);
+    }
+  }
+
+  async fetchBranches() {
+    try {
+      let apiUrl;
+      const headers = {};
+
+      if (this.provider === 'github') {
+        apiUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/branches`;
+        if (this.repoType === 'private' && this.accessToken) {
+          headers['Authorization'] = `Bearer ${this.accessToken}`;
+        }
+      } else {
+        // GitLab
+        const projectId = encodeURIComponent(`${this.owner}/${this.repo}`);
+        apiUrl = `https://${this.hostname}/api/v4/projects/${projectId}/repository/branches`;
+        if (this.repoType === 'private' && this.accessToken) {
+          headers['PRIVATE-TOKEN'] = this.accessToken;
+        }
+      }
+
+      const response = await fetch(apiUrl, { headers });
+
+      if (!response.ok) {
+        // If we can't fetch branches, fallback to common branch names
+        console.warn('Failed to fetch branches, using defaults');
+        this.branches = ['main', 'master', 'develop'];
+      } else {
+        const data = await response.json();
+        this.branches = data.map(branch => branch.name);
+      }
+
+      // Check if saved branch exists, otherwise use URL branch or first available
+      const savedBranch = localStorage.getItem('tabioke-repo-branch');
+      if (savedBranch && this.branches.includes(savedBranch)) {
+        this.branch = savedBranch;
+      } else if (!this.branches.includes(this.branch) && this.branches.length > 0) {
+        this.branch = this.branches[0];
+      }
+
+      // Populate branch selector
+      this.renderBranchSelector();
+
+    } catch (e) {
+      console.error('Error fetching branches:', e);
+      // Fallback to common branch names
+      this.branches = ['main', 'master', 'develop'];
+      this.renderBranchSelector();
+    }
+  }
+
+  renderBranchSelector() {
+    const branchSection = this.shadowRoot.getElementById('branch-section');
+    const branchSelect = this.shadowRoot.getElementById('branch-select');
+    
+    if (this.branches.length > 0) {
+      branchSection.style.display = 'flex';
+      branchSelect.disabled = false;
+      branchSelect.innerHTML = '';
+      
+      this.branches.forEach(branchName => {
+        const option = document.createElement('option');
+        option.value = branchName;
+        option.textContent = branchName;
+        if (branchName === this.branch) {
+          option.selected = true;
+        }
+        branchSelect.appendChild(option);
+      });
+    } else {
+      branchSection.style.display = 'none';
     }
   }
 
