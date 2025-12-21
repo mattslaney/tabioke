@@ -19,6 +19,13 @@ class YoutubePlayer extends HTMLElement {
     this.loopEnd = 100; // percentage
     this.duration = 0;
     this.isMuted = false;
+    
+    // Fallback mode (when embedding not allowed)
+    this.fallbackMode = false;
+    this.fallbackCurrentTime = 0;
+    this.fallbackPlaying = false;
+    this.fallbackInterval = null;
+    this.apiLoadTimeout = null;
   }
 
   connectedCallback() {
@@ -725,25 +732,56 @@ class YoutubePlayer extends HTMLElement {
   }
 
   loadYouTubeAPI() {
+    console.log('[YT Player] loadYouTubeAPI called');
     if (window.YT && window.YT.Player) {
+      console.log('[YT Player] YouTube API already loaded');
       this.isReady = true;
       return;
     }
 
     if (document.getElementById('youtube-iframe-api')) {
+      console.log('[YT Player] YouTube API script already in DOM, waiting for ready event');
       window.addEventListener('youtube-api-ready', () => {
+        console.log('[YT Player] YouTube API ready event received');
         this.isReady = true;
       });
       return;
     }
 
+    console.log('[YT Player] Loading YouTube API script');
     const tag = document.createElement('script');
     tag.id = 'youtube-iframe-api';
     tag.src = 'https://www.youtube.com/iframe_api';
     const firstScriptTag = document.getElementsByTagName('script')[0];
     firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+    console.log('[YT Player] YouTube API script tag inserted');
+
+    // Set a timeout to detect if API loading fails
+    this.apiLoadTimeout = setTimeout(() => {
+      console.warn('[YT Player] YouTube API loading timed out after 10 seconds');
+      if (!this.isReady && this.videoId) {
+        console.log('[YT Player] Switching to fallback mode due to API timeout');
+        this.switchToFallbackMode();
+      }
+    }, 10000);
+
+    // Handle script load errors
+    tag.onerror = () => {
+      console.error('[YT Player] Failed to load YouTube API script');
+      if (this.apiLoadTimeout) {
+        clearTimeout(this.apiLoadTimeout);
+      }
+      if (this.videoId) {
+        console.log('[YT Player] Switching to fallback mode due to API load error');
+        this.switchToFallbackMode();
+      }
+    };
 
     window.onYouTubeIframeAPIReady = () => {
+      console.log('[YT Player] onYouTubeIframeAPIReady callback fired');
+      if (this.apiLoadTimeout) {
+        clearTimeout(this.apiLoadTimeout);
+      }
       this.isReady = true;
       window.dispatchEvent(new CustomEvent('youtube-api-ready'));
     };
@@ -787,7 +825,22 @@ class YoutubePlayer extends HTMLElement {
 
     // Play/Pause
     addButtonHandler(playPauseBtn, () => {
-      if (this.player) {
+      if (this.fallbackMode) {
+        // Use fallback playback
+        if (this.fallbackPlaying) {
+          this.stopFallbackPlayback();
+        } else {
+          if (this.loopEnabled && this.duration > 0) {
+            const startTime = (this.loopStart / 100) * this.duration;
+            const endTime = (this.loopEnd / 100) * this.duration;
+            
+            if (this.fallbackCurrentTime < startTime || this.fallbackCurrentTime >= endTime) {
+              this.fallbackCurrentTime = startTime;
+            }
+          }
+          this.startFallbackPlayback();
+        }
+      } else if (this.player) {
         const state = this.player.getPlayerState();
         if (state === 1) {
           this.player.pauseVideo();
@@ -808,7 +861,14 @@ class YoutubePlayer extends HTMLElement {
 
     // Stop
     addButtonHandler(stopBtn, () => {
-      if (this.player) {
+      if (this.fallbackMode) {
+        this.stopFallbackPlayback();
+        this.fallbackCurrentTime = 0;
+        this.updateTimeDisplay();
+        playPauseBtn.textContent = '▶';
+        this.setStatus('ready', 'Stopped');
+        window.dispatchEvent(new CustomEvent('video-stopped'));
+      } else if (this.player) {
         this.player.stopVideo();
         // Update play/pause button to show play icon
         playPauseBtn.textContent = '▶';
@@ -991,10 +1051,28 @@ class YoutubePlayer extends HTMLElement {
       });
     };
 
+    console.log('[YT Player] Checking if API is ready');
+    console.log('[YT Player] this.isReady:', this.isReady);
+    console.log('[YT Player] window.YT:', !!window.YT);
+    console.log('[YT Player] window.YT.Player:', !!(window.YT && window.YT.Player));
+    
     if (this.isReady && window.YT && window.YT.Player) {
+      console.log('[YT Player] API ready, calling initPlayer immediately');
       initPlayer();
     } else {
-      window.addEventListener('youtube-api-ready', initPlayer, { once: true });
+      console.log('[YT Player] API not ready, waiting for youtube-api-ready event');
+      
+      // Set a timeout in case the API never loads
+      const loadTimeout = setTimeout(() => {
+        console.warn('[YT Player] Timed out waiting for API, switching to fallback mode');
+        this.switchToFallbackMode();
+      }, 15000);
+      
+      window.addEventListener('youtube-api-ready', () => {
+        console.log('[YT Player] youtube-api-ready event received, calling initPlayer');
+        clearTimeout(loadTimeout);
+        initPlayer();
+      }, { once: true });
     }
   }
 
@@ -1115,7 +1193,213 @@ class YoutubePlayer extends HTMLElement {
     };
 
     const message = errorCodes[event.data] || 'Unknown error';
+    console.error('[YT Player] Player error:', event.data, '-', message);
+    console.error('[YT Player] Full error event:', event);
     this.setStatus('error', message);
+    
+    // Switch to fallback mode for embedding errors
+    if (event.data === 101 || event.data === 150) {
+      console.log('[YT Player] Switching to fallback mode');
+      this.switchToFallbackMode();
+    }
+  }
+
+  async switchToFallbackMode() {
+    console.log('[YT Player] switchToFallbackMode called for videoId:', this.videoId);
+    this.fallbackMode = true;
+    
+    // Try multiple methods to get video duration
+    let durationFound = false;
+    
+    // Method 1: Try to scrape from YouTube's page (may not work due to CORS)
+    try {
+      console.log('[YT Player] Attempting to fetch duration from YouTube page');
+      const pageUrl = `https://www.youtube.com/watch?v=${this.videoId}`;
+      const response = await fetch(pageUrl);
+      const html = await response.text();
+      
+      // Look for duration in JSON data
+      const durationMatch = html.match(/"lengthSeconds":"(\d+)"/);
+      if (durationMatch) {
+        this.duration = parseInt(durationMatch[1]);
+        durationFound = true;
+        console.log('[YT Player] Found duration from YouTube page:', this.duration);
+      }
+    } catch (e) {
+      console.warn('[YT Player] Could not fetch from YouTube page:', e);
+    }
+    
+    // Method 2: Try noembed.com
+    if (!durationFound) {
+      try {
+        const noembedUrl = `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${this.videoId}`;
+        console.log('[YT Player] Trying noembed:', noembedUrl);
+        const noembedResponse = await fetch(noembedUrl);
+        const noembedData = await noembedResponse.json();
+        console.log('[YT Player] Noembed response:', noembedData);
+        
+        if (noembedData.duration) {
+          this.duration = noembedData.duration;
+          durationFound = true;
+          console.log('[YT Player] Found duration from noembed:', this.duration);
+        }
+      } catch (e) {
+        console.warn('[YT Player] Noembed fetch failed:', e);
+      }
+    }
+    
+    // Method 3: Prompt user for duration
+    if (!durationFound) {
+      console.log('[YT Player] Could not auto-detect duration, prompting user');
+      const userDuration = prompt('Could not detect video duration. Please enter duration in format MM:SS (e.g., 3:45 for 3 minutes 45 seconds):');
+      
+      if (userDuration) {
+        const parts = userDuration.split(':');
+        if (parts.length === 2) {
+          const minutes = parseInt(parts[0]) || 0;
+          const seconds = parseInt(parts[1]) || 0;
+          this.duration = minutes * 60 + seconds;
+          console.log('[YT Player] User provided duration:', this.duration);
+        } else {
+          // Try to parse as just seconds
+          this.duration = parseInt(userDuration) || 300;
+          console.log('[YT Player] Parsed as seconds:', this.duration);
+        }
+      } else {
+        // Default to 5 minutes
+        this.duration = 300;
+        console.log('[YT Player] Using default duration:', this.duration);
+      }
+    }
+    
+    this.fallbackCurrentTime = 0;
+    this.updateTimeDisplay();
+    this.updateLoopTimes();
+    this.enableControls();
+    
+    this.setStatus('ready', `Fallback mode (${this.formatTime(this.duration)})`);
+    
+    // Dispatch video-loaded event so other components know we're ready
+    this.dispatchEvent(new CustomEvent('video-loaded', {
+      detail: { 
+        duration: this.duration,
+        videoId: this.videoId,
+        fallbackMode: true
+      },
+      bubbles: true,
+      composed: true
+    }));
+    console.log('[YT Player] Fallback mode initialized, duration:', this.duration);
+  }
+    
+    // Dispatch video-loaded event so other components know we're ready
+    this.dispatchEvent(new CustomEvent('video-loaded', {
+      detail: { 
+        duration: this.duration,
+        videoId: this.videoId,
+        fallbackMode: true
+      },
+      bubbles: true,
+      composed: true
+    }));
+    console.log('[YT Player] Fallback mode initialized, duration:', this.duration);
+  }
+
+  startFallbackPlayback() {
+    console.log('[YT Player] Starting fallback playback');
+    this.fallbackPlaying = true;
+    this.setStatus('playing', 'Playing (fallback mode)');
+    
+    const playPauseBtn = this.shadowRoot.getElementById('play-pause-btn');
+    if (playPauseBtn) playPauseBtn.textContent = '⏸';
+    
+    if (this.fallbackInterval) {
+      clearInterval(this.fallbackInterval);
+    }
+    
+    // Update every 100ms
+    const updateInterval = 100;
+    this.fallbackInterval = setInterval(() => {
+      if (this.fallbackPlaying) {
+        // Increment time based on playback rate
+        this.fallbackCurrentTime += (updateInterval / 1000) * this.playbackRate;
+        
+        const progress = (this.fallbackCurrentTime / this.duration) * 100;
+        this.updateTimeDisplay();
+        this.updateProgressBar(progress);
+        
+        // Handle loop
+        if (this.loopEnabled) {
+          const endTime = (this.loopEnd / 100) * this.duration;
+          const startTime = (this.loopStart / 100) * this.duration;
+          
+          if (this.fallbackCurrentTime >= endTime) {
+            this.fallbackCurrentTime = startTime;
+            window.dispatchEvent(new CustomEvent('video-loop-restart', {
+              detail: { 
+                loopStartTime: startTime,
+                loopEndTime: endTime 
+              }
+            }));
+          }
+          
+          if (this.fallbackCurrentTime < startTime - 0.5) {
+            this.fallbackCurrentTime = startTime;
+          }
+        } else if (this.fallbackCurrentTime >= this.duration) {
+          // End of video
+          this.fallbackCurrentTime = this.duration;
+          this.stopFallbackPlayback();
+          this.setStatus('ready', 'Ended');
+          window.dispatchEvent(new CustomEvent('video-state-change', {
+            detail: { 
+              state: 'ended',
+              currentTime: this.fallbackCurrentTime,
+              duration: this.duration
+            }
+          }));
+        }
+        
+        // Dispatch progress event
+        window.dispatchEvent(new CustomEvent('video-progress', {
+          detail: { 
+            currentTime: this.fallbackCurrentTime, 
+            duration: this.duration,
+            fallbackMode: true
+          }
+        }));
+        
+        window.dispatchEvent(new CustomEvent('video-state-change', {
+          detail: { 
+            state: 'playing',
+            currentTime: this.fallbackCurrentTime,
+            duration: this.duration
+          }
+        }));
+      }
+    }, updateInterval);
+  }
+
+  stopFallbackPlayback() {
+    console.log('[YT Player] Stopping fallback playback');
+    this.fallbackPlaying = false;
+    this.setStatus('ready', 'Paused');
+    
+    const playPauseBtn = this.shadowRoot.getElementById('play-pause-btn');
+    if (playPauseBtn) playPauseBtn.textContent = '▶';
+    
+    if (this.fallbackInterval) {
+      clearInterval(this.fallbackInterval);
+      this.fallbackInterval = null;
+    }
+    
+    window.dispatchEvent(new CustomEvent('video-state-change', {
+      detail: { 
+        state: 'paused',
+        currentTime: this.fallbackCurrentTime,
+        duration: this.duration
+      }
+    }));
   }
 
   startProgressTracking() {
@@ -1177,12 +1461,14 @@ class YoutubePlayer extends HTMLElement {
   }
 
   updateTimeDisplay() {
-    if (!this.player || !this.player.getCurrentTime) return;
-
     const timeDisplay = this.shadowRoot.getElementById('time-display');
-    const currentTime = this.player.getCurrentTime();
-
-    timeDisplay.textContent = `${this.formatTime(currentTime)} / ${this.formatTime(this.duration)}`;
+    
+    if (this.fallbackMode) {
+      timeDisplay.textContent = `${this.formatTime(this.fallbackCurrentTime)} / ${this.formatTime(this.duration)}`;
+    } else if (this.player && this.player.getCurrentTime) {
+      const currentTime = this.player.getCurrentTime();
+      timeDisplay.textContent = `${this.formatTime(currentTime)} / ${this.formatTime(this.duration)}`;
+    }
   }
 
   formatTime(seconds) {
@@ -1209,31 +1495,43 @@ class YoutubePlayer extends HTMLElement {
   }
 
   setPlaybackRate(rate) {
+    this.playbackRate = rate;
     if (this.player && this.player.setPlaybackRate) {
       this.player.setPlaybackRate(rate);
     }
+    // Fallback mode will use this.playbackRate in the interval
   }
 
   // Public API
   play() {
-    if (this.player && this.player.playVideo) {
+    if (this.fallbackMode) {
+      this.startFallbackPlayback();
+    } else if (this.player && this.player.playVideo) {
       this.player.playVideo();
     }
   }
 
   pause() {
-    if (this.player && this.player.pauseVideo) {
+    if (this.fallbackMode) {
+      this.stopFallbackPlayback();
+    } else if (this.player && this.player.pauseVideo) {
       this.player.pauseVideo();
     }
   }
 
   seekTo(seconds) {
-    if (this.player && this.player.seekTo) {
+    if (this.fallbackMode) {
+      this.fallbackCurrentTime = Math.max(0, Math.min(seconds, this.duration));
+      this.updateTimeDisplay();
+    } else if (this.player && this.player.seekTo) {
       this.player.seekTo(seconds, true);
     }
   }
 
   getCurrentTime() {
+    if (this.fallbackMode) {
+      return this.fallbackCurrentTime;
+    }
     return this.player ? this.player.getCurrentTime() : 0;
   }
 
@@ -1242,6 +1540,9 @@ class YoutubePlayer extends HTMLElement {
   }
 
   getPlayerState() {
+    if (this.fallbackMode) {
+      return this.fallbackPlaying ? 1 : 2; // 1 = playing, 2 = paused
+    }
     return this.player ? this.player.getPlayerState() : -1;
   }
 
