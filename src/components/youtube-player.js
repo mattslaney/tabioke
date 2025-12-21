@@ -18,6 +18,7 @@ class YoutubePlayer extends HTMLElement {
     this.loopStart = 0;
     this.loopEnd = 100; // percentage
     this.duration = 0;
+    this.isMuted = false;
   }
 
   connectedCallback() {
@@ -80,6 +81,11 @@ class YoutubePlayer extends HTMLElement {
         if (loopEndSlider) loopEndSlider.value = this.loopEnd;
       }
 
+      const savedMuted = localStorage.getItem('tabioke-muted');
+      if (savedMuted !== null) {
+        this.isMuted = savedMuted === 'true';
+      }
+
       this.updateRangeVisual();
     } catch (e) {
       console.warn('Failed to load from localStorage:', e);
@@ -98,6 +104,7 @@ class YoutubePlayer extends HTMLElement {
       localStorage.setItem('tabioke-loop-enabled', this.loopEnabled.toString());
       localStorage.setItem('tabioke-loop-start', this.loopStart.toString());
       localStorage.setItem('tabioke-loop-end', this.loopEnd.toString());
+      localStorage.setItem('tabioke-muted', this.isMuted.toString());
     } catch (e) {
       console.warn('Failed to save to localStorage:', e);
     }
@@ -582,6 +589,7 @@ class YoutubePlayer extends HTMLElement {
       <div class="controls-bar">
         <button class="control-btn" id="play-pause-btn" title="Play/Pause" disabled>▶</button>
         <button class="control-btn" id="stop-btn" title="Stop" disabled>⬛</button>
+        <button class="control-btn" id="mute-btn" title="Mute/Unmute" disabled>🔊</button>
         
         <div class="speed-control">
           <span class="speed-label">Speed</span>
@@ -656,6 +664,7 @@ class YoutubePlayer extends HTMLElement {
     const urlInput = this.shadowRoot.getElementById('url-input');
     const playPauseBtn = this.shadowRoot.getElementById('play-pause-btn');
     const stopBtn = this.shadowRoot.getElementById('stop-btn');
+    const muteBtn = this.shadowRoot.getElementById('mute-btn');
     const speedSelect = this.shadowRoot.getElementById('speed-select');
     const loopToggle = this.shadowRoot.getElementById('loop-toggle');
     const loopStart = this.shadowRoot.getElementById('loop-start');
@@ -701,6 +710,21 @@ class YoutubePlayer extends HTMLElement {
         this.setStatus('ready', 'Stopped');
         // Dispatch event so metronome can also stop if auto-start is enabled
         window.dispatchEvent(new CustomEvent('video-stopped'));
+      }
+    });
+
+    // Mute/Unmute
+    muteBtn.addEventListener('click', () => {
+      if (this.player) {
+        this.isMuted = !this.isMuted;
+        if (this.isMuted) {
+          this.player.mute();
+          muteBtn.textContent = '🔇';
+        } else {
+          this.player.unMute();
+          muteBtn.textContent = '🔊';
+        }
+        this.saveToStorage();
       }
     });
 
@@ -876,6 +900,16 @@ class YoutubePlayer extends HTMLElement {
     this.updateTimeDisplay();
     this.enableControls();
     this.updateLoopTimes();
+
+    // Apply saved mute state
+    const muteBtn = this.shadowRoot.getElementById('mute-btn');
+    if (this.isMuted) {
+      this.player.mute();
+      if (muteBtn) muteBtn.textContent = '🔇';
+    } else {
+      this.player.unMute();
+      if (muteBtn) muteBtn.textContent = '🔊';
+    }
 
     const rates = this.player.getAvailablePlaybackRates();
     this.updateSpeedOptions(rates);
