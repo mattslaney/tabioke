@@ -15,6 +15,17 @@ class TabViewer extends HTMLElement {
     this.currentTime = 0;
     this.highlightEnabled = true;
     this.syncEnabled = true;
+    
+    // Repository file tracking
+    this.loadedFromRepo = false;
+    this.repoFilePath = null;
+    this.repoFileName = null;
+    this.repoProvider = null;
+    this.repoOwner = null;
+    this.repoRepo = null;
+    this.repoBranch = null;
+    this.repoHostname = null;
+    this.originalRepoContent = null; // Track original content to detect changes
   }
 
   connectedCallback() {
@@ -424,6 +435,37 @@ class TabViewer extends HTMLElement {
           border-color: var(--accent-primary);
         }
 
+        .save-to-repo-btn {
+          font-family: var(--font-display);
+          font-weight: 500;
+          cursor: pointer;
+          border: 1px solid #10b981;
+          border-radius: 4px;
+          background: var(--bg-tertiary);
+          color: #10b981;
+          padding: 5px 12px;
+          font-size: 0.75rem;
+          flex-shrink: 0;
+          transition: all 0.2s;
+          display: none;
+        }
+
+        .save-to-repo-btn.visible {
+          display: block;
+        }
+
+        .save-to-repo-btn:hover:not(:disabled) {
+          background: #10b981;
+          color: white;
+        }
+
+        .save-to-repo-btn:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+          border-color: var(--text-muted);
+          color: var(--text-muted);
+        }
+
         /* Metadata display */
         .metadata-bar {
           display: none;
@@ -491,6 +533,7 @@ class TabViewer extends HTMLElement {
           placeholder="Enter URL to load tab from..."
         >
         <button class="load-url-btn" id="load-url-btn">Load</button>
+        <button class="save-to-repo-btn" id="save-to-repo-btn" title="Commit changes back to repository" disabled>💾 Save</button>
         <button class="browse-repo-btn" id="browse-repo-btn" title="Browse repository">📂 Browse</button>
       </div>
       <div class="metadata-bar" id="metadata-bar">
@@ -607,9 +650,30 @@ Some lyrics here to sing along with"
       }
     });
 
+    // Save to repository button
+    const saveToRepoBtn = this.shadowRoot.getElementById('save-to-repo-btn');
+    saveToRepoBtn.addEventListener('click', () => {
+      this.saveToRepository();
+    });
+
     // Listen for tab selection from repo browser
     window.addEventListener('tab-selected-from-repo', (e) => {
-      const { url, token } = e.detail;
+      const { url, token, path, fileName, provider, owner, repo, branch, hostname } = e.detail;
+      
+      // Store repo context
+      this.loadedFromRepo = true;
+      this.repoFilePath = path;
+      this.repoFileName = fileName;
+      this.repoProvider = provider;
+      this.repoOwner = owner;
+      this.repoRepo = repo;
+      this.repoBranch = branch;
+      this.repoHostname = hostname || 'gitlab.com';
+      
+      // Show save button (but keep it disabled until changes are made)
+      saveToRepoBtn.classList.add('visible');
+      saveToRepoBtn.disabled = true;
+      
       tabUrlInput.value = url;
       this.loadFromUrl(url, token);
     });
@@ -630,6 +694,12 @@ Some lyrics here to sing along with"
         bubbles: true,
         composed: true
       }));
+      
+      // Check if content has changed from original repo content
+      if (this.loadedFromRepo && this.originalRepoContent !== null) {
+        const hasChanges = this.tabContent !== this.originalRepoContent;
+        saveToRepoBtn.disabled = !hasChanges;
+      }
     });
 
     // Sync scroll between textarea and highlight layer
@@ -710,6 +780,16 @@ Some lyrics here to sing along with"
         this.startAutoScroll();
       } else {
         this.stopAutoScroll();
+      }
+    });
+
+    // Ctrl+S to save to repository
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.key === 's') {
+        e.preventDefault();
+        if (this.loadedFromRepo && !saveToRepoBtn.disabled) {
+          this.saveToRepository();
+        }
       }
     });
   }
@@ -1238,6 +1318,15 @@ Some lyrics here to sing along with"
         composed: true
       }));
       
+      // Store original content if loaded from repo
+      if (this.loadedFromRepo) {
+        this.originalRepoContent = text;
+        const saveToRepoBtn = this.shadowRoot.getElementById('save-to-repo-btn');
+        if (saveToRepoBtn) {
+          saveToRepoBtn.disabled = true; // No changes yet
+        }
+      }
+      
     } catch (error) {
       console.error('Failed to load tab:', error);
       alert(`Failed to load tab: ${error.message}`);
@@ -1331,6 +1420,42 @@ Some lyrics here to sing along with"
     } else {
       metadataBar.classList.remove('visible');
     }
+  }
+
+  /**
+   * Save current tab content back to repository
+   */
+  saveToRepository() {
+    if (!this.loadedFromRepo || !this.repoFilePath) {
+      alert('This tab was not loaded from a repository. Use the Browse button to load a tab from GitHub or GitLab first.');
+      return;
+    }
+
+    // Get current tab content
+    const tabArea = this.shadowRoot.getElementById('tab-area');
+    const currentContent = tabArea.value;
+
+    // Get access token from localStorage
+    const accessToken = localStorage.getItem('tabioke-access-token');
+    if (!accessToken) {
+      alert('Access token required to commit changes. Please open the repository browser, set repo type to Private, and add an access token.');
+      return;
+    }
+
+    // Dispatch event to open commit modal
+    window.dispatchEvent(new CustomEvent('show-commit-modal', {
+      detail: {
+        filePath: this.repoFilePath,
+        fileName: this.repoFileName,
+        content: currentContent,
+        provider: this.repoProvider,
+        owner: this.repoOwner,
+        repo: this.repoRepo,
+        branch: this.repoBranch,
+        hostname: this.repoHostname,
+        accessToken: accessToken
+      }
+    }));
   }
 }
 

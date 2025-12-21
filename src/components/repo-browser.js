@@ -471,6 +471,33 @@ class RepoBrowser extends HTMLElement {
           margin-left: 8px;
         }
 
+        .commit-section {
+          padding: 16px 20px;
+          background: var(--bg-tertiary);
+          border-top: 1px solid var(--border-color);
+          flex-shrink: 0;
+          display: none;
+        }
+
+        .commit-section.visible {
+          display: block;
+        }
+
+        .commit-info {
+          font-family: var(--font-display);
+          font-size: 0.75rem;
+          color: var(--text-secondary);
+          margin-bottom: 12px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .commit-file-name {
+          color: var(--accent-primary);
+          font-weight: 500;
+        }
+
         /* Responsive styles */
         @media (max-width: 480px) {
           .url-input-row,
@@ -1043,14 +1070,21 @@ class RepoBrowser extends HTMLElement {
       rawUrl = `https://${this.hostname}/${this.owner}/${this.repo}/-/raw/${this.branch}/${path}`;
     }
 
+    // Store the file path for potential commits
+    this.loadedFilePath = path;
+    this.loadedFileName = path.split('/').pop();
+
     // Dispatch event for tab viewer to handle
     window.dispatchEvent(new CustomEvent('tab-selected-from-repo', {
       detail: {
         url: rawUrl,
         path: path,
+        fileName: this.loadedFileName,
         provider: this.provider,
         owner: this.owner,
         repo: this.repo,
+        branch: this.branch,
+        hostname: this.hostname, // Include hostname for GitLab
         token: this.repoType === 'private' ? this.accessToken : null // Only pass token for private repos
       }
     }));
