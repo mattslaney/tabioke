@@ -38,6 +38,7 @@ class RepoBrowser extends HTMLElement {
         if (urlInput) urlInput.value = savedRepoUrl;
       }
       
+      // Load saved branch - will be used when auto-loading repo
       const savedBranch = localStorage.getItem('tabioke-repo-branch');
       if (savedBranch) {
         this.branch = savedBranch;
@@ -650,12 +651,21 @@ class RepoBrowser extends HTMLElement {
     const overlay = this.shadowRoot.getElementById('modal-overlay');
     overlay.classList.add('open');
     
-    // Focus the input
-    setTimeout(() => {
-      const urlInput = this.shadowRoot.getElementById('repo-url-input');
-      urlInput.focus();
-      urlInput.select();
-    }, 100);
+    // If we have a saved repo URL and valid repo info, auto-load it
+    const savedRepoUrl = localStorage.getItem('tabioke-repo-url');
+    if (savedRepoUrl && this.repoUrl && !this.provider) {
+      // We have a saved URL but haven't loaded the repo yet
+      setTimeout(() => {
+        this.loadRepository();
+      }, 100);
+    } else {
+      // Focus the input
+      setTimeout(() => {
+        const urlInput = this.shadowRoot.getElementById('repo-url-input');
+        urlInput.focus();
+        urlInput.select();
+      }, 100);
+    }
   }
 
   close() {
@@ -734,7 +744,19 @@ class RepoBrowser extends HTMLElement {
       this.provider = parsed.provider;
       this.owner = parsed.owner;
       this.repo = parsed.repo;
-      this.branch = parsed.branch;
+      
+      // Check if we have a saved branch for this repo
+      const savedBranch = localStorage.getItem('tabioke-repo-branch');
+      const savedRepoUrl = localStorage.getItem('tabioke-repo-url');
+      
+      // Only use saved branch if we're loading the same repo
+      if (savedBranch && savedRepoUrl === url) {
+        this.branch = savedBranch;
+      } else {
+        // Otherwise use the branch from the URL
+        this.branch = parsed.branch;
+      }
+      
       this.hostname = parsed.hostname;
       this.repoUrl = url;
       this.currentPath = parsed.startPath;
@@ -789,11 +811,8 @@ class RepoBrowser extends HTMLElement {
         this.branches = data.map(branch => branch.name);
       }
 
-      // Check if saved branch exists, otherwise use URL branch or first available
-      const savedBranch = localStorage.getItem('tabioke-repo-branch');
-      if (savedBranch && this.branches.includes(savedBranch)) {
-        this.branch = savedBranch;
-      } else if (!this.branches.includes(this.branch) && this.branches.length > 0) {
+      // If the current branch doesn't exist in the list, use the first available
+      if (!this.branches.includes(this.branch) && this.branches.length > 0) {
         this.branch = this.branches[0];
       }
 
