@@ -1161,7 +1161,7 @@ Some lyrics here to sing along with"
    * - Removes all blank/whitespace-only lines
    * - Adds two blank lines before section markers like [Chorus]
    * - Adds a blank line before chord lines
-   * - Adds a blank line before tablature sections (6-string groups)
+   * - Adds a blank line before tablature sections (groups based on Tuning header string count)
    * @param {string} text - Text to format
    * @returns {string} - Formatted text
    */
@@ -1175,7 +1175,8 @@ Some lyrics here to sing along with"
     if (nonBlankLines.length === 0) return '';
     
     const result = [];
-    const STRINGS_PER_TAB = 6; // Assuming standard 6-string guitar
+    // Get string count from tuning header, defaults to 6 for standard guitar
+    const STRINGS_PER_TAB = this.getStringCountFromContent(text);
     const timestampRegex = /@\d{1,2}:\d{2}(?::\d{2})?/;
     let consecutiveTabLines = 0;
     
@@ -1214,7 +1215,7 @@ Some lyrics here to sing along with"
             result.push('');
             consecutiveTabLines = 0;
           } else if (prevWasTab && consecutiveTabLines >= STRINGS_PER_TAB) {
-            // Starting a new 6-string section - add blank line
+            // Starting a new tab section (detected via string count from tuning) - add blank line
             result.push('');
             consecutiveTabLines = 0;
           }
@@ -1425,6 +1426,60 @@ Some lyrics here to sing along with"
       metadata,
       content: contentLines.join('\n')
     };
+  }
+
+  /**
+   * Parse the tuning header to determine the number of strings
+   * Supports formats: EADGBE, E A D G B E, E-A-D-G-B-E, etc.
+   * @param {string} tuning - Tuning string (e.g., "EADGBE", "E A D G B E", "E-A-D-G-B-E")
+   * @returns {number} - Number of strings (defaults to 6 if not determinable)
+   */
+  parseStringCount(tuning) {
+    if (!tuning || typeof tuning !== 'string') {
+      return 6; // Default to 6-string guitar
+    }
+    
+    const trimmed = tuning.trim();
+    if (!trimmed) {
+      return 6;
+    }
+    
+    // Check if tuning uses separators (spaces or hyphens)
+    if (trimmed.includes(' ') || trimmed.includes('-')) {
+      // Split by space or hyphen and count non-empty parts
+      const parts = trimmed.split(/[\s-]+/).filter(p => p.length > 0);
+      return parts.length > 0 ? parts.length : 6;
+    }
+    
+    // No separators - count individual note letters (A-G with optional # or b)
+    // Match patterns like: E, A, D, G, B, E or D#, Bb, etc.
+    const notePattern = /[A-Ga-g][#b♯♭]?/g;
+    const matches = trimmed.match(notePattern);
+    return matches ? matches.length : 6;
+  }
+
+  /**
+   * Get the number of strings from the current content's tuning header
+   * @param {string} text - Tab content to parse
+   * @returns {number} - Number of strings
+   */
+  getStringCountFromContent(text) {
+    if (!text) return 6;
+    
+    // Look for Tuning: header in the content
+    const lines = text.split('\n');
+    for (const line of lines) {
+      const match = line.trim().match(/^[Tt]uning:\s*(.+)$/i);
+      if (match) {
+        return this.parseStringCount(match[1]);
+      }
+      // Stop looking after first non-metadata line
+      if (line.trim() && !line.includes(':')) {
+        break;
+      }
+    }
+    
+    return 6; // Default to 6-string guitar if no Tuning header found
   }
 
   /**

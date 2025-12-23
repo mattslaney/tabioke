@@ -1046,6 +1046,36 @@ class MetronomeApp extends HTMLElement {
   }
 
   /**
+   * Parse the tuning header to determine the number of strings
+   * Supports formats: EADGBE, E A D G B E, E-A-D-G-B-E, etc.
+   * @param {string} tuning - Tuning string (e.g., "EADGBE", "E A D G B E", "E-A-D-G-B-E")
+   * @returns {number} - Number of strings (defaults to 6 if not determinable)
+   */
+  parseStringCount(tuning) {
+    if (!tuning || typeof tuning !== 'string') {
+      return 6; // Default to 6-string guitar
+    }
+    
+    const trimmed = tuning.trim();
+    if (!trimmed) {
+      return 6;
+    }
+    
+    // Check if tuning uses separators (spaces or hyphens)
+    if (trimmed.includes(' ') || trimmed.includes('-')) {
+      // Split by space or hyphen and count non-empty parts
+      const parts = trimmed.split(/[\s-]+/).filter(p => p.length > 0);
+      return parts.length > 0 ? parts.length : 6;
+    }
+    
+    // No separators - count individual note letters (A-G with optional # or b)
+    // Match patterns like: E, A, D, G, B, E or D#, Bb, etc.
+    const notePattern = /[A-Ga-g][#b\u266f\u266d]?/g;
+    const matches = trimmed.match(notePattern);
+    return matches ? matches.length : 6;
+  }
+
+  /**
    * Render the Info tab content (strumming pattern and chord diagrams)
    */
   renderInfoTab() {
@@ -1191,14 +1221,18 @@ class MetronomeApp extends HTMLElement {
    * @returns {SVGElement}
    */
   createChordSVG(frets, fingering) {
-    const width = 60;
-    const height = 80;
+    // Get string count from tuning, default to 6 for standard guitar
+    const numStrings = this.parseStringCount(this.songMetadata?.tuning);
+    
     const stringSpacing = 8;
     const fretSpacing = 14;
     const leftPadding = 12;
     const topPadding = 16;
-    const numStrings = 6;
     const numFrets = 4;
+    
+    // Calculate dynamic width based on number of strings
+    const width = leftPadding * 2 + (numStrings - 1) * stringSpacing;
+    const height = 80;
 
     // Parse frets
     const fretValues = frets.split('').map(f => f.toLowerCase() === 'x' ? -1 : parseInt(f));
