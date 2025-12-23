@@ -34,11 +34,18 @@ class TabViewer extends HTMLElement {
     this.lastRepoBranch = null;
     this.lastRepoHostname = null;
     this.isNewFile = false; // Track if current content is a new unsaved file
+    
+    // Stopwatch tracking
+    this.stopwatchStartTime = null;
+    this.stopwatchElapsed = 0;
+    this.stopwatchInterval = null;
+    this.isPageVisible = true;
   }
 
   connectedCallback() {
     this.render();
     this.setupEventListeners();
+    this.setupStopwatch();
     
     // Delay initial sync to ensure other components are loaded
     setTimeout(() => {
@@ -479,6 +486,90 @@ class TabViewer extends HTMLElement {
           color: var(--text-muted);
         }
 
+        .footer-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 6px 12px;
+          background: var(--bg-tertiary);
+          border-top: 1px solid var(--border-color);
+          flex-shrink: 0;
+        }
+
+        .footer-right {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .guide-btn {
+          font-family: var(--font-display);
+          font-weight: 500;
+          cursor: pointer;
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          background: var(--bg-elevated);
+          color: var(--text-secondary);
+          padding: 4px 10px;
+          font-size: 0.7rem;
+          transition: all 0.2s;
+        }
+
+        .guide-btn:hover {
+          background: var(--bg-tertiary);
+          border-color: var(--accent-primary);
+          color: var(--accent-primary);
+        }
+
+        .stopwatch {
+          font-family: var(--font-mono);
+          font-size: 0.75rem;
+          color: var(--text-muted);
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .stopwatch-icon {
+          font-size: 0.8rem;
+        }
+
+        .stopwatch-time {
+          color: var(--text-secondary);
+          min-width: 45px;
+        }
+
+        .stopwatch.active .stopwatch-time {
+          color: var(--accent-primary);
+        }
+
+        .stats-btn {
+          font-family: var(--font-display);
+          font-weight: 500;
+          cursor: pointer;
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          background: var(--bg-elevated);
+          color: var(--text-secondary);
+          padding: 4px 10px;
+          font-size: 0.7rem;
+          transition: all 0.2s;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .stats-btn:hover {
+          background: var(--bg-tertiary);
+          border-color: var(--accent-primary);
+          color: var(--accent-primary);
+        }
+
+        .stats-btn::before {
+          content: '📊';
+          font-size: 0.85rem;
+        }
+
       </style>
 
       <div class="header">
@@ -550,6 +641,16 @@ Some lyrics here to sing along with"
           Auto-scrolling...
         </div>
       </div>
+      <div class="footer-bar">
+        <button class="guide-btn" id="guide-btn" title="View app guide">📖 Guide</button>
+        <div class="footer-right">
+          <div class="stopwatch" id="stopwatch">
+            <span class="stopwatch-icon">⏱️</span>
+            <span class="stopwatch-time" id="stopwatch-time">0:00</span>
+          </div>
+          <button class="stats-btn" id="stats-btn" title="View practice statistics">Statistics</button>
+        </div>
+      </div>
     `;
   }
 
@@ -562,6 +663,18 @@ Some lyrics here to sing along with"
     const formatBtn = this.shadowRoot.getElementById('format-btn');
     const formatOnPaste = this.shadowRoot.getElementById('format-on-paste');
     const highlightToggle = this.shadowRoot.getElementById('highlight-toggle');
+    const statsBtn = this.shadowRoot.getElementById('stats-btn');
+    const guideBtn = this.shadowRoot.getElementById('guide-btn');
+
+    // Statistics button
+    statsBtn.addEventListener('click', () => {
+      window.dispatchEvent(new CustomEvent('show-stats-modal'));
+    });
+
+    // Guide button
+    guideBtn.addEventListener('click', () => {
+      window.dispatchEvent(new CustomEvent('show-guide-modal'));
+    });
 
     // Load highlight preference from localStorage
     const savedHighlight = localStorage.getItem('tabioke-highlight-enabled');
@@ -625,6 +738,9 @@ Some lyrics here to sing along with"
     // Listen for tab selection from repo browser
     window.addEventListener('tab-selected-from-repo', (e) => {
       const { url, token, path, fileName, provider, owner, repo, branch, hostname } = e.detail;
+      
+      // Reset stopwatch for new tab
+      this.resetStopwatch();
       
       // Store repo context
       this.loadedFromRepo = true;
@@ -1533,6 +1649,9 @@ Some lyrics here to sing along with"
   setupNewTab(data) {
     const { filePath, provider, owner, repo, branch, hostname } = data;
     
+    // Reset stopwatch for new tab
+    this.resetStopwatch();
+    
     // Clear current content and set up template
     const tabArea = this.shadowRoot.getElementById('tab-area');
     const tabUrlInput = this.shadowRoot.getElementById('tab-url-input');
@@ -1593,6 +1712,117 @@ Chords:
       // Position cursor after "Title: "
       tabArea.setSelectionRange(7, 7);
     }, 100);
+  }
+
+  /**
+   * Setup stopwatch functionality
+   */
+  setupStopwatch() {
+    // Handle page visibility changes
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        this.pauseStopwatch();
+      } else {
+        this.resumeStopwatch();
+      }
+    });
+    
+    // Listen for stats cleared event to reset stopwatch
+    window.addEventListener('stats-cleared', () => {
+      this.resetStopwatch();
+    });
+    
+    // Start the stopwatch
+    this.startStopwatch();
+  }
+
+  /**
+   * Start the stopwatch
+   */
+  startStopwatch() {
+    this.isPageVisible = true;
+    this.stopwatchStartTime = Date.now();
+    
+    // Update display every second
+    this.stopwatchInterval = setInterval(() => {
+      this.updateStopwatchDisplay();
+    }, 1000);
+    
+    this.updateStopwatchDisplay();
+    this.updateStopwatchActiveState(true);
+  }
+
+  /**
+   * Pause the stopwatch (when tab is hidden)
+   */
+  pauseStopwatch() {
+    this.isPageVisible = false;
+    
+    // Save elapsed time
+    if (this.stopwatchStartTime) {
+      this.stopwatchElapsed += Date.now() - this.stopwatchStartTime;
+      this.stopwatchStartTime = null;
+    }
+    
+    this.updateStopwatchActiveState(false);
+  }
+
+  /**
+   * Resume the stopwatch (when tab is visible again)
+   */
+  resumeStopwatch() {
+    this.isPageVisible = true;
+    this.stopwatchStartTime = Date.now();
+    this.updateStopwatchActiveState(true);
+  }
+
+  /**
+   * Reset the stopwatch
+   */
+  resetStopwatch() {
+    this.stopwatchElapsed = 0;
+    if (this.isPageVisible) {
+      this.stopwatchStartTime = Date.now();
+    }
+    this.updateStopwatchDisplay();
+  }
+
+  /**
+   * Update the stopwatch display
+   */
+  updateStopwatchDisplay() {
+    const stopwatchTime = this.shadowRoot.getElementById('stopwatch-time');
+    if (!stopwatchTime) return;
+    
+    let totalMs = this.stopwatchElapsed;
+    if (this.stopwatchStartTime && this.isPageVisible) {
+      totalMs += Date.now() - this.stopwatchStartTime;
+    }
+    
+    const totalSeconds = Math.floor(totalMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    if (hours > 0) {
+      stopwatchTime.textContent = `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    } else {
+      stopwatchTime.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+  }
+
+  /**
+   * Update stopwatch active state (visual indicator)
+   */
+  updateStopwatchActiveState(active) {
+    const stopwatch = this.shadowRoot.getElementById('stopwatch');
+    if (!stopwatch) return;
+    
+    if (active) {
+      stopwatch.classList.add('active');
+    } else {
+      stopwatch.classList.remove('active');
+    }
   }
 }
 
