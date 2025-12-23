@@ -503,6 +503,39 @@ class TabViewer extends HTMLElement {
           color: var(--text-primary);
           font-weight: 500;
         }
+
+        .metadata-chords-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 2px;
+        }
+
+        .chord-item {
+          font-family: var(--font-mono);
+          font-size: 0.7rem;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          padding: 3px 8px;
+          color: var(--text-primary);
+          white-space: nowrap;
+        }
+
+        .chord-name {
+          color: var(--accent-primary);
+          font-weight: 600;
+          margin-right: 6px;
+        }
+
+        .chord-frets {
+          color: var(--text-secondary);
+          margin-right: 4px;
+        }
+
+        .chord-fingering {
+          color: var(--text-muted);
+        }
       </style>
 
       <div class="header">
@@ -560,6 +593,14 @@ class TabViewer extends HTMLElement {
         <div class="metadata-item" id="meta-timing" style="display:none">
           <span class="metadata-label">Timing:</span>
           <span class="metadata-value" id="meta-timing-value"></span>
+        </div>
+        <div class="metadata-item" id="meta-strummingpattern" style="display:none">
+          <span class="metadata-label">Strumming:</span>
+          <span class="metadata-value" id="meta-strummingpattern-value"></span>
+        </div>
+        <div class="metadata-item" id="meta-chords" style="display:none;flex-basis:100%;flex-direction:column;gap:2px">
+          <span class="metadata-label">Chords:</span>
+          <div class="metadata-chords-list" id="meta-chords-list"></div>
         </div>
       </div>
       <div class="progress-bar">
@@ -1130,8 +1171,10 @@ Some lyrics here to sing along with"
     if (!trimmed) return false;
     
     // Known metadata keys (case-insensitive)
-    const metadataPattern = /^(Title|Artist|Album|Tempo|Timing|YouTubeURL|YouTubeOffset|Capo|Tuning|Key):\s*.*/i;
-    return metadataPattern.test(trimmed);
+    const metadataPattern = /^(Title|Artist|Album|Tempo|Timing|YouTubeURL|YouTubeOffset|Capo|Tuning|Key|Strumming Pattern|Chords):\s*.*/i;
+    // Also match chord list items
+    const chordListPattern = /^\*\s+\S+.*$/;
+    return metadataPattern.test(trimmed) || chordListPattern.test(trimmed);
   }
 
   /**
@@ -1142,7 +1185,7 @@ Some lyrics here to sing along with"
    */
   isChord(word) {
     // Chord pattern: Root note (A-G) + optional sharp/flat + optional quality + optional number + optional bass note
-    const chordPattern = /^[A-Ga-g][#b♯♭]?(m|M|maj|min|dim|aug|sus|add|dom)?[0-9]*(\/[A-Ga-g][#b♯♭]?)?\*?$/;
+    const chordPattern = /^[A-Ga-g][#b♯♭]?(m|M|maj|min|dim|aug|sus|add|dom)?[0-9\/]*(\/[A-Ga-g][#b♯♭]?)?\*?$/;
     return chordPattern.test(word);
   }
 
@@ -1398,16 +1441,26 @@ Some lyrics here to sing along with"
     const metadata = {};
     const contentLines = [];
     let inMetadata = true;
+    let inChordsList = false;
     
     // Known metadata keys (case-insensitive)
     const metadataKeys = [
       'title', 'artist', 'album', 'tempo', 'timing', 
-      'youtubeurl', 'youtubeoffset', 'capo', 'tuning', 'key'
+      'youtubeurl', 'youtubeoffset', 'capo', 'tuning', 'key',
+      'strummingpattern', 'chords'
     ];
     
     for (const line of lines) {
       if (inMetadata) {
         const trimmed = line.trim();
+        
+        // Check if we're in a chord list and this is a chord line
+        if (inChordsList && trimmed.startsWith('* ')) {
+          const chordLine = trimmed.substring(2).trim();
+          if (!metadata.chords) metadata.chords = [];
+          metadata.chords.push(chordLine);
+          continue;
+        }
         
         // Check if this is a metadata line (Key: Value format)
         const match = trimmed.match(/^([A-Za-z]+):\s*(.*)$/);
@@ -1415,8 +1468,13 @@ Some lyrics here to sing along with"
           const key = match[1].toLowerCase();
           const value = match[2].trim();
           
-          if (metadataKeys.includes(key) && value) {
-            metadata[key] = value;
+          if (metadataKeys.includes(key)) {
+            if (key === 'chords') {
+              inChordsList = true;
+              metadata.chords = [];
+            } else if (value) {
+              metadata[key] = value;
+            }
             continue; // Don't add to content
           }
         }
@@ -1428,6 +1486,7 @@ Some lyrics here to sing along with"
         
         // First non-metadata, non-empty line ends metadata section
         inMetadata = false;
+        inChordsList = false;
       }
       
       contentLines.push(line);
@@ -1447,7 +1506,7 @@ Some lyrics here to sing along with"
     const metadataBar = this.shadowRoot.getElementById('metadata-bar');
     
     // Update each metadata field
-    const fields = ['title', 'artist', 'tempo', 'timing'];
+    const fields = ['title', 'artist', 'tempo', 'timing', 'strummingpattern'];
     let hasAny = false;
     
     for (const field of fields) {
@@ -1462,6 +1521,54 @@ Some lyrics here to sing along with"
         } else {
           container.style.display = 'none';
         }
+      }
+    }
+    
+    // Handle chords list separately
+    const chordsContainer = this.shadowRoot.getElementById('meta-chords');
+    const chordsList = this.shadowRoot.getElementById('meta-chords-list');
+    
+    if (chordsContainer && chordsList) {
+      if (metadata.chords && metadata.chords.length > 0) {
+        chordsList.innerHTML = '';
+        
+        metadata.chords.forEach(chordLine => {
+          // Parse chord line: "ChordName - frets - fingering" or "ChordName - frets"
+          const parts = chordLine.split('-').map(p => p.trim());
+          if (parts.length >= 2) {
+            const chordName = parts[0];
+            const frets = parts[1];
+            const fingering = parts[2] || '';
+            
+            const chordDiv = document.createElement('div');
+            chordDiv.className = 'chord-item';
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'chord-name';
+            nameSpan.textContent = chordName;
+            
+            const fretsSpan = document.createElement('span');
+            fretsSpan.className = 'chord-frets';
+            fretsSpan.textContent = frets;
+            
+            chordDiv.appendChild(nameSpan);
+            chordDiv.appendChild(fretsSpan);
+            
+            if (fingering) {
+              const fingeringSpan = document.createElement('span');
+              fingeringSpan.className = 'chord-fingering';
+              fingeringSpan.textContent = fingering;
+              chordDiv.appendChild(fingeringSpan);
+            }
+            
+            chordsList.appendChild(chordDiv);
+          }
+        });
+        
+        chordsContainer.style.display = 'flex';
+        hasAny = true;
+      } else {
+        chordsContainer.style.display = 'none';
       }
     }
     
@@ -1538,6 +1645,9 @@ Timing: 4/4
 Tuning: E A D G B E
 Key: 
 Capo: 0
+Strumming Pattern: 
+Chords:
+ * 
 
 ---
 
