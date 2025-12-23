@@ -809,7 +809,20 @@ Some lyrics here to sing along with"
     // Store tab content on input and update highlighting
     tabArea.addEventListener('input', () => {
       this.tabContent = tabArea.value;
-      this.updateHighlighting();
+      
+      // Cancel any pending highlighting update to avoid multiple updates
+      if (this._highlightAnimationFrame) {
+        cancelAnimationFrame(this._highlightAnimationFrame);
+      }
+      
+      // Defer highlighting update to next animation frame
+      // The highlight layer is separate from the textarea, so updating it
+      // should not affect the textarea's cursor position
+      this._highlightAnimationFrame = requestAnimationFrame(() => {
+        this._highlightAnimationFrame = null;
+        this.updateHighlighting();
+      });
+      
       // Sync metadata if enabled (debounced)
       if (this.syncEnabled) {
         this.debouncedSync();
@@ -994,8 +1007,11 @@ Some lyrics here to sing along with"
         const beforeComment = processedLine.substring(0, commentIndex);
         const comment = processedLine.substring(commentIndex);
         
-        // Process the part before comment
-        htmlLine = this.highlightLineContent(beforeComment);
+        // Only process the part before comment if it's not empty
+        // Empty beforeComment would add an unwanted space character
+        if (beforeComment.length > 0) {
+          htmlLine = this.highlightLineContent(beforeComment);
+        }
         // Add the comment
         htmlLine += `<span class="comment">${this.escapeHtml(comment)}</span>`;
         
