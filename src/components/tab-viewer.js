@@ -1084,11 +1084,27 @@ Some lyrics here to sing along with"
     const trimmed = line.trim();
     if (!trimmed) return false;
     
-    // Known metadata keys (case-insensitive)
-    const metadataPattern = /^(Title|Artist|Album|Tempo|Timing|YouTubeURL|YouTubeOffset|Capo|Tuning|Key|Strumming Pattern|Chords):\s*.*/i;
+    // Match any metadata key pattern (letters and spaces followed by colon)
+    const match = trimmed.match(/^([A-Za-z][A-Za-z\s]*):\s*(.*)$/);
+    if (match) {
+      // Normalize key: lowercase and remove spaces
+      const key = match[1].toLowerCase().replace(/\s+/g, '');
+      
+      // Known metadata keys (normalized, case-insensitive, no spaces)
+      const metadataKeys = [
+        'title', 'artist', 'album', 'tempo', 'timing', 
+        'youtubeurl', 'youtubeoffset', 'capo', 'tuning', 'key',
+        'strummingpattern', 'chords'
+      ];
+      
+      if (metadataKeys.includes(key)) {
+        return true;
+      }
+    }
+    
     // Also match chord list items
     const chordListPattern = /^\*\s+\S+.*$/;
-    return metadataPattern.test(trimmed) || chordListPattern.test(trimmed);
+    return chordListPattern.test(trimmed);
   }
 
   /**
