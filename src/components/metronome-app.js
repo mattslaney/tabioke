@@ -356,6 +356,14 @@ class MetronomeApp extends HTMLElement {
           flex-direction: column;
           align-items: center;
           gap: 4px;
+          cursor: pointer;
+          padding: 6px;
+          border-radius: 6px;
+          transition: background-color 0.15s ease;
+        }
+
+        .chord-diagram:hover {
+          background-color: var(--bg-secondary);
         }
 
         .chord-name {
@@ -363,6 +371,60 @@ class MetronomeApp extends HTMLElement {
           font-size: 0.9rem;
           font-weight: 600;
           color: var(--accent-primary);
+        }
+
+        /* Chord Modal */
+        .chord-modal-overlay {
+          display: none;
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.7);
+          z-index: 1000;
+          justify-content: center;
+          align-items: center;
+        }
+
+        .chord-modal-overlay.visible {
+          display: flex;
+        }
+
+        .chord-modal {
+          background: var(--bg-primary);
+          border-radius: 12px;
+          padding: 24px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 12px;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+          max-width: 90vw;
+          max-height: 90vh;
+        }
+
+        .chord-modal-name {
+          font-family: var(--font-display);
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: var(--accent-primary);
+        }
+
+        .chord-modal-close {
+          position: absolute;
+          top: 10px;
+          right: 16px;
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          font-size: 1.5rem;
+          cursor: pointer;
+          padding: 4px 8px;
+        }
+
+        .chord-modal-close:hover {
+          color: var(--text-primary);
         }
 
         .empty-state {
@@ -1039,6 +1101,14 @@ class MetronomeApp extends HTMLElement {
         </div>
         </div>
       </div>
+
+      <!-- Chord Modal -->
+      <div class="chord-modal-overlay" id="chord-modal-overlay">
+        <div class="chord-modal">
+          <div class="chord-modal-name" id="chord-modal-name"></div>
+          <div class="chord-modal-svg" id="chord-modal-svg"></div>
+        </div>
+      </div>
     `;
 
     this.updateBeatDisplay();
@@ -1073,6 +1143,80 @@ class MetronomeApp extends HTMLElement {
     const notePattern = /[A-Ga-g][#b\u266f\u266d]?/g;
     const matches = trimmed.match(notePattern);
     return matches ? matches.length : 6;
+  }
+
+  /**
+   * Parse a fret string into an array of fret values
+   * Supports formats:
+   * - No separators (single digits only): "xx0232", "022100"
+   * - Space-separated (allows double digits): "x x 0 2 3 2", "x x 12 10 10 10"
+   * - Hyphen-separated (allows double digits): "x-x-0-2-3-2", "x-x-12-10-10-10"
+   * @param {string} frets - Fret string
+   * @returns {number[]} - Array of fret values (-1 for muted, 0+ for fret number)
+   */
+  parseFretString(frets) {
+    if (!frets || typeof frets !== 'string') {
+      return [];
+    }
+    
+    const trimmed = frets.trim();
+    if (!trimmed) {
+      return [];
+    }
+    
+    // Check if frets use separators (spaces or hyphens)
+    if (trimmed.includes(' ') || trimmed.includes('-')) {
+      // Split by space or hyphen
+      return trimmed.split(/[\s-]+/).filter(p => p.length > 0).map(f => {
+        const lower = f.toLowerCase();
+        if (lower === 'x') return -1;
+        const num = parseInt(f);
+        return isNaN(num) ? -1 : num;
+      });
+    }
+    
+    // No separators - treat each character as a single fret (only works for single digits)
+    return trimmed.split('').map(f => {
+      const lower = f.toLowerCase();
+      if (lower === 'x') return -1;
+      const num = parseInt(f);
+      return isNaN(num) ? -1 : num;
+    });
+  }
+
+  /**
+   * Parse a fingering string into an array of finger values
+   * Supports formats:
+   * - No separators: "012000", "x21030", "002111"
+   * - Space-separated: "0 1 2 0 0 0", "x 2 1 0 3 0"
+   * - Hyphen-separated: "0-1-2-0-0-0"
+   * Valid finger values: 0 (open), T (thumb), 1, 2, 3, 4
+   * @param {string} fingering - Fingering string
+   * @returns {(string|null)[]} - Array of finger values (null for open/muted)
+   */
+  parseFingeringString(fingering) {
+    if (!fingering || typeof fingering !== 'string') {
+      return [];
+    }
+    
+    const trimmed = fingering.trim();
+    if (!trimmed) {
+      return [];
+    }
+    
+    // Check if fingering uses separators (spaces or hyphens)
+    let parts;
+    if (trimmed.includes(' ') || trimmed.includes('-')) {
+      parts = trimmed.split(/[\s-]+/).filter(p => p.length > 0);
+    } else {
+      parts = trimmed.split('');
+    }
+    
+    return parts.map(f => {
+      const lower = f.toLowerCase();
+      if (lower === 'x' || f === '0') return null;
+      return f.toUpperCase();
+    });
   }
 
   /**
@@ -1211,6 +1355,67 @@ class MetronomeApp extends HTMLElement {
       diagram.appendChild(name);
       diagram.appendChild(svg);
       container.appendChild(diagram);
+
+      // Click to open modal
+      diagram.addEventListener('click', () => {
+        this.openChordModal(chord);
+      });
+    }
+
+    // Setup modal close handlers
+    this.setupChordModal();
+  }
+
+  /**
+   * Setup chord modal event handlers
+   */
+  setupChordModal() {
+    const overlay = this.shadowRoot.getElementById('chord-modal-overlay');
+    if (!overlay) return;
+
+    // Close on overlay click
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        this.closeChordModal();
+      }
+    });
+
+    // Close on escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.closeChordModal();
+      }
+    });
+  }
+
+  /**
+   * Open the chord modal with a larger diagram
+   * @param {Object} chord - Chord object with name, frets, fingering
+   */
+  openChordModal(chord) {
+    const overlay = this.shadowRoot.getElementById('chord-modal-overlay');
+    const nameEl = this.shadowRoot.getElementById('chord-modal-name');
+    const svgContainer = this.shadowRoot.getElementById('chord-modal-svg');
+
+    if (!overlay || !nameEl || !svgContainer) return;
+
+    nameEl.textContent = chord.name;
+    svgContainer.innerHTML = '';
+    
+    // Create a larger version of the chord SVG
+    const svg = this.createChordSVG(chord.frets, chord.fingering, 3);
+    svgContainer.appendChild(svg);
+
+    overlay.classList.add('visible');
+  }
+
+  /**
+   * Close the chord modal
+   */
+  closeChordModal() {
+    const overlay = this.shadowRoot.getElementById('chord-modal-overlay');
+    if (overlay) {
+      overlay.classList.remove('visible');
     }
   }
 
@@ -1218,29 +1423,26 @@ class MetronomeApp extends HTMLElement {
    * Create an SVG chord diagram
    * @param {string} frets - Fret positions (e.g., "022000", "x32010")
    * @param {string} fingering - Optional fingering pattern (e.g., "012000", "x21030")
+   * @param {number} scale - Scale multiplier for the diagram (default: 1)
    * @returns {SVGElement}
    */
-  createChordSVG(frets, fingering) {
+  createChordSVG(frets, fingering, scale = 1) {
     // Get string count from tuning, default to 6 for standard guitar
     const numStrings = this.parseStringCount(this.songMetadata?.tuning);
     
-    const stringSpacing = 8;
-    const fretSpacing = 14;
-    const leftPadding = 12;
-    const topPadding = 16;
+    const stringSpacing = 8 * scale;
+    const fretSpacing = 14 * scale;
+    const leftPadding = 12 * scale;
+    const topPadding = 16 * scale;
     const numFrets = 4;
     
     // Calculate dynamic width based on number of strings
     const width = leftPadding * 2 + (numStrings - 1) * stringSpacing;
-    const height = 80;
+    const height = 80 * scale;
 
-    // Parse frets
-    const fretValues = frets.split('').map(f => f.toLowerCase() === 'x' ? -1 : parseInt(f));
-    const fingerValues = fingering ? fingering.split('').map(f => {
-      if (f.toLowerCase() === 'x') return null;
-      if (f === '0') return null;
-      return f.toUpperCase();
-    }) : [];
+    // Parse frets and fingering
+    const fretValues = this.parseFretString(frets);
+    const fingerValues = this.parseFingeringString(fingering);
 
     // Calculate min/max frets to determine if we need a position marker
     const playedFrets = fretValues.filter(f => f > 0);
@@ -1265,24 +1467,24 @@ class MetronomeApp extends HTMLElement {
     bg.setAttribute('width', width);
     bg.setAttribute('height', height);
     bg.setAttribute('fill', '#1a1a1a');
-    bg.setAttribute('rx', '4');
+    bg.setAttribute('rx', 4 * scale);
     svg.appendChild(bg);
 
     // Nut (thick line at top) or position marker
     if (showNut) {
       const nut = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      nut.setAttribute('x', leftPadding - 1);
-      nut.setAttribute('y', topPadding - 2);
-      nut.setAttribute('width', (numStrings - 1) * stringSpacing + 2);
-      nut.setAttribute('height', 3);
+      nut.setAttribute('x', leftPadding - 1 * scale);
+      nut.setAttribute('y', topPadding - 2 * scale);
+      nut.setAttribute('width', (numStrings - 1) * stringSpacing + 2 * scale);
+      nut.setAttribute('height', 3 * scale);
       nut.setAttribute('fill', '#f0e6d3');
       svg.appendChild(nut);
     } else {
       // Position marker
       const posText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      posText.setAttribute('x', 2);
-      posText.setAttribute('y', topPadding + fretSpacing / 2 + 3);
-      posText.setAttribute('font-size', '8');
+      posText.setAttribute('x', 2 * scale);
+      posText.setAttribute('y', topPadding + fretSpacing / 2 + 3 * scale);
+      posText.setAttribute('font-size', 8 * scale);
       posText.setAttribute('fill', '#a89f8c');
       posText.setAttribute('font-family', 'sans-serif');
       posText.textContent = startFret + 1;
@@ -1297,7 +1499,7 @@ class MetronomeApp extends HTMLElement {
       fret.setAttribute('x2', leftPadding + (numStrings - 1) * stringSpacing);
       fret.setAttribute('y2', topPadding + i * fretSpacing);
       fret.setAttribute('stroke', '#4a4a4a');
-      fret.setAttribute('stroke-width', '1');
+      fret.setAttribute('stroke-width', 1 * scale);
       svg.appendChild(fret);
     }
 
@@ -1309,11 +1511,101 @@ class MetronomeApp extends HTMLElement {
       string.setAttribute('x2', leftPadding + i * stringSpacing);
       string.setAttribute('y2', topPadding + numFrets * fretSpacing);
       string.setAttribute('stroke', '#6b6459');
-      string.setAttribute('stroke-width', '1');
+      string.setAttribute('stroke-width', 1 * scale);
       svg.appendChild(string);
     }
 
-    // Finger positions and markers
+    // Detect bar chords: find groups of consecutive strings with same finger on same fret
+    const barChords = [];
+    const renderedAsBar = new Set(); // Track which string indices are rendered as bars
+
+    // Only detect bars if we have fingering info
+    if (fingerValues.length > 0) {
+      let barStart = null;
+      let currentFinger = null;
+      let currentFret = null;
+
+      for (let i = 0; i < numStrings; i++) {
+        const fretVal = fretValues[i];
+        const fingerVal = fingerValues[i];
+
+        // Check if this could be part of a bar (same finger, same fret, fretted note)
+        if (fretVal > 0 && fingerVal && fingerVal === currentFinger && fretVal === currentFret) {
+          // Continue the bar
+        } else {
+          // End previous bar if it spans multiple strings
+          if (barStart !== null && i - barStart > 1) {
+            barChords.push({
+              startString: barStart,
+              endString: i - 1,
+              fret: currentFret,
+              finger: currentFinger
+            });
+          }
+          // Start new potential bar
+          if (fretVal > 0 && fingerVal) {
+            barStart = i;
+            currentFinger = fingerVal;
+            currentFret = fretVal;
+          } else {
+            barStart = null;
+            currentFinger = null;
+            currentFret = null;
+          }
+        }
+      }
+      // Check for bar at end
+      if (barStart !== null && numStrings - barStart > 1) {
+        barChords.push({
+          startString: barStart,
+          endString: numStrings - 1,
+          fret: currentFret,
+          finger: currentFinger
+        });
+      }
+    }
+
+    // Mark strings that are part of bars
+    for (const bar of barChords) {
+      for (let i = bar.startString; i <= bar.endString; i++) {
+        renderedAsBar.add(i);
+      }
+    }
+
+    // Render bar chords first (so they're behind individual dots)
+    for (const bar of barChords) {
+      const displayFret = bar.fret - startFret;
+      const y = topPadding + (displayFret - 0.5) * fretSpacing;
+      const x1 = leftPadding + bar.startString * stringSpacing;
+      const x2 = leftPadding + bar.endString * stringSpacing;
+      const barRadius = 4 * scale;
+
+      // Draw bar as a rounded rectangle (pill shape)
+      const barRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      barRect.setAttribute('x', x1 - barRadius);
+      barRect.setAttribute('y', y - barRadius);
+      barRect.setAttribute('width', x2 - x1 + barRadius * 2);
+      barRect.setAttribute('height', barRadius * 2);
+      barRect.setAttribute('rx', barRadius);
+      barRect.setAttribute('ry', barRadius);
+      barRect.setAttribute('fill', '#e07020');
+      svg.appendChild(barRect);
+
+      // Finger number in center of bar
+      const centerX = (x1 + x2) / 2;
+      const fingerText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      fingerText.setAttribute('x', centerX);
+      fingerText.setAttribute('y', y + 3 * scale);
+      fingerText.setAttribute('text-anchor', 'middle');
+      fingerText.setAttribute('font-size', 7 * scale);
+      fingerText.setAttribute('fill', '#0d0d0d');
+      fingerText.setAttribute('font-weight', 'bold');
+      fingerText.setAttribute('font-family', 'sans-serif');
+      fingerText.textContent = bar.finger;
+      svg.appendChild(fingerText);
+    }
+
+    // Finger positions and markers (skip strings that are part of bars)
     for (let i = 0; i < numStrings; i++) {
       const fretVal = fretValues[i];
       const fingerVal = fingerValues[i];
@@ -1323,9 +1615,9 @@ class MetronomeApp extends HTMLElement {
         // X marker (muted string)
         const xMark = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         xMark.setAttribute('x', x);
-        xMark.setAttribute('y', topPadding - 5);
+        xMark.setAttribute('y', topPadding - 5 * scale);
         xMark.setAttribute('text-anchor', 'middle');
-        xMark.setAttribute('font-size', '8');
+        xMark.setAttribute('font-size', 8 * scale);
         xMark.setAttribute('fill', '#6b6459');
         xMark.setAttribute('font-family', 'sans-serif');
         xMark.textContent = '×';
@@ -1334,12 +1626,15 @@ class MetronomeApp extends HTMLElement {
         // Open string (O marker)
         const oMark = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         oMark.setAttribute('cx', x);
-        oMark.setAttribute('cy', topPadding - 6);
-        oMark.setAttribute('r', '3');
+        oMark.setAttribute('cy', topPadding - 6 * scale);
+        oMark.setAttribute('r', 3 * scale);
         oMark.setAttribute('stroke', '#a89f8c');
-        oMark.setAttribute('stroke-width', '1');
+        oMark.setAttribute('stroke-width', 1 * scale);
         oMark.setAttribute('fill', 'none');
         svg.appendChild(oMark);
+      } else if (renderedAsBar.has(i)) {
+        // Skip - this string is part of a bar chord
+        continue;
       } else {
         // Fretted note
         const displayFret = fretVal - startFret;
@@ -1348,7 +1643,7 @@ class MetronomeApp extends HTMLElement {
         const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         dot.setAttribute('cx', x);
         dot.setAttribute('cy', y);
-        dot.setAttribute('r', '4');
+        dot.setAttribute('r', 4 * scale);
         dot.setAttribute('fill', fingerVal ? '#e07020' : '#f0e6d3');
         svg.appendChild(dot);
 
@@ -1356,9 +1651,9 @@ class MetronomeApp extends HTMLElement {
         if (fingerVal) {
           const fingerText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
           fingerText.setAttribute('x', x);
-          fingerText.setAttribute('y', y + 3);
+          fingerText.setAttribute('y', y + 3 * scale);
           fingerText.setAttribute('text-anchor', 'middle');
-          fingerText.setAttribute('font-size', '7');
+          fingerText.setAttribute('font-size', 7 * scale);
           fingerText.setAttribute('fill', '#0d0d0d');
           fingerText.setAttribute('font-weight', 'bold');
           fingerText.setAttribute('font-family', 'sans-serif');
