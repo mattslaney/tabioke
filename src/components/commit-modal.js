@@ -156,6 +156,7 @@ class CommitModal extends HTMLElement {
           color: var(--text-primary);
           resize: vertical;
           min-height: 80px;
+          box-sizing: border-box;
         }
 
         .commit-input:focus {

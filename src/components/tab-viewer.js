@@ -521,6 +521,31 @@ class TabViewer extends HTMLElement {
           color: var(--accent-primary);
         }
 
+        .tuner-btn {
+          font-family: var(--font-display);
+          font-weight: 500;
+          cursor: pointer;
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          background: var(--bg-elevated);
+          color: var(--text-secondary);
+          padding: 4px 10px;
+          font-size: 0.7rem;
+          transition: all 0.2s;
+        }
+
+        .tuner-btn:hover {
+          background: var(--bg-tertiary);
+          border-color: var(--accent-primary);
+          color: var(--accent-primary);
+        }
+
+        .footer-left {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+        }
+
         .stopwatch {
           font-family: var(--font-mono);
           font-size: 0.75rem;
@@ -642,7 +667,10 @@ Some lyrics here to sing along with"
         </div>
       </div>
       <div class="footer-bar">
-        <button class="guide-btn" id="guide-btn" title="View app guide">📖 Guide</button>
+        <div class="footer-left">
+          <button class="guide-btn" id="guide-btn" title="View app guide">📖 Guide</button>
+          <button class="tuner-btn" id="tuner-btn" title="Open guitar tuner">🎵 Tuner</button>
+        </div>
         <div class="footer-right">
           <div class="stopwatch" id="stopwatch">
             <span class="stopwatch-icon">⏱️</span>
@@ -665,6 +693,7 @@ Some lyrics here to sing along with"
     const highlightToggle = this.shadowRoot.getElementById('highlight-toggle');
     const statsBtn = this.shadowRoot.getElementById('stats-btn');
     const guideBtn = this.shadowRoot.getElementById('guide-btn');
+    const tunerBtn = this.shadowRoot.getElementById('tuner-btn');
 
     // Statistics button
     statsBtn.addEventListener('click', () => {
@@ -674,6 +703,11 @@ Some lyrics here to sing along with"
     // Guide button
     guideBtn.addEventListener('click', () => {
       window.dispatchEvent(new CustomEvent('show-guide-modal'));
+    });
+
+    // Tuner button
+    tunerBtn.addEventListener('click', () => {
+      window.dispatchEvent(new CustomEvent('show-tuner-modal'));
     });
 
     // Load highlight preference from localStorage
