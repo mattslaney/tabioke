@@ -39,6 +39,11 @@ class TabViewer extends HTMLElement {
   connectedCallback() {
     this.render();
     this.setupEventListeners();
+    
+    // Delay initial sync to ensure other components are loaded
+    setTimeout(() => {
+      this.syncMetadataFromContent();
+    }, 100);
   }
 
   /**
@@ -474,68 +479,6 @@ class TabViewer extends HTMLElement {
           color: var(--text-muted);
         }
 
-        /* Metadata display */
-        .metadata-bar {
-          display: none;
-          padding: 6px 12px;
-          background: var(--bg-tertiary);
-          border-bottom: 1px solid var(--border-color);
-          font-size: 0.7rem;
-          color: var(--text-secondary);
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-
-        .metadata-bar.visible {
-          display: flex;
-        }
-
-        .metadata-item {
-          display: flex;
-          gap: 4px;
-        }
-
-        .metadata-label {
-          color: var(--text-muted);
-        }
-
-        .metadata-value {
-          color: var(--text-primary);
-          font-weight: 500;
-        }
-
-        .metadata-chords-list {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          margin-top: 2px;
-        }
-
-        .chord-item {
-          font-family: var(--font-mono);
-          font-size: 0.7rem;
-          background: var(--bg-primary);
-          border: 1px solid var(--border-color);
-          border-radius: 4px;
-          padding: 3px 8px;
-          color: var(--text-primary);
-          white-space: nowrap;
-        }
-
-        .chord-name {
-          color: var(--accent-primary);
-          font-weight: 600;
-          margin-right: 6px;
-        }
-
-        .chord-frets {
-          color: var(--text-secondary);
-          margin-right: 4px;
-        }
-
-        .chord-fingering {
-          color: var(--text-muted);
-        }
       </style>
 
       <div class="header">
@@ -576,32 +519,6 @@ class TabViewer extends HTMLElement {
         <button class="load-url-btn" id="load-url-btn">Load</button>
         <button class="save-to-repo-btn" id="save-to-repo-btn" title="Commit changes back to repository" disabled>💾 Save</button>
         <button class="browse-repo-btn" id="browse-repo-btn" title="Browse repository">📂 Browse</button>
-      </div>
-      <div class="metadata-bar" id="metadata-bar">
-        <div class="metadata-item" id="meta-title" style="display:none">
-          <span class="metadata-label">Title:</span>
-          <span class="metadata-value" id="meta-title-value"></span>
-        </div>
-        <div class="metadata-item" id="meta-artist" style="display:none">
-          <span class="metadata-label">Artist:</span>
-          <span class="metadata-value" id="meta-artist-value"></span>
-        </div>
-        <div class="metadata-item" id="meta-tempo" style="display:none">
-          <span class="metadata-label">Tempo:</span>
-          <span class="metadata-value" id="meta-tempo-value"></span>
-        </div>
-        <div class="metadata-item" id="meta-timing" style="display:none">
-          <span class="metadata-label">Timing:</span>
-          <span class="metadata-value" id="meta-timing-value"></span>
-        </div>
-        <div class="metadata-item" id="meta-strummingpattern" style="display:none">
-          <span class="metadata-label">Strumming:</span>
-          <span class="metadata-value" id="meta-strummingpattern-value"></span>
-        </div>
-        <div class="metadata-item" id="meta-chords" style="display:none;flex-basis:100%;flex-direction:column;gap:2px">
-          <span class="metadata-label">Chords:</span>
-          <div class="metadata-chords-list" id="meta-chords-list"></div>
-        </div>
       </div>
       <div class="progress-bar">
         <div class="progress-fill" id="progress-fill"></div>
@@ -925,9 +842,6 @@ Some lyrics here to sing along with"
     if (!tabArea) return;
     
     const { metadata } = this.parseMetadata(tabArea.value);
-    
-    // Display in metadata bar
-    this.displayMetadata(metadata);
     
     // Dispatch event for other components
     if (Object.keys(metadata).length > 0) {
@@ -1393,9 +1307,6 @@ Some lyrics here to sing along with"
       this.tabContent = text;
       this.updateHighlighting();
       
-      // Display metadata in the UI
-      this.displayMetadata(metadata);
-      
       // Dispatch event with metadata for other components
       if (Object.keys(metadata).length > 0) {
         window.dispatchEvent(new CustomEvent('tab-metadata-loaded', {
@@ -1463,9 +1374,11 @@ Some lyrics here to sing along with"
         }
         
         // Check if this is a metadata line (Key: Value format)
-        const match = trimmed.match(/^([A-Za-z]+):\s*(.*)$/);
+        // Allow spaces in key names (e.g., "Strumming Pattern")
+        const match = trimmed.match(/^([A-Za-z][A-Za-z\s]*):\s*(.*)$/);
         if (match) {
-          const key = match[1].toLowerCase();
+          // Normalize key: lowercase and remove spaces
+          const key = match[1].toLowerCase().replace(/\s+/g, '');
           const value = match[2].trim();
           
           if (metadataKeys.includes(key)) {
@@ -1496,88 +1409,6 @@ Some lyrics here to sing along with"
       metadata,
       content: contentLines.join('\n')
     };
-  }
-
-  /**
-   * Display parsed metadata in the UI
-   * @param {Object} metadata - Parsed metadata object
-   */
-  displayMetadata(metadata) {
-    const metadataBar = this.shadowRoot.getElementById('metadata-bar');
-    
-    // Update each metadata field
-    const fields = ['title', 'artist', 'tempo', 'timing', 'strummingpattern'];
-    let hasAny = false;
-    
-    for (const field of fields) {
-      const container = this.shadowRoot.getElementById(`meta-${field}`);
-      const valueEl = this.shadowRoot.getElementById(`meta-${field}-value`);
-      
-      if (container && valueEl) {
-        if (metadata[field]) {
-          valueEl.textContent = metadata[field];
-          container.style.display = 'flex';
-          hasAny = true;
-        } else {
-          container.style.display = 'none';
-        }
-      }
-    }
-    
-    // Handle chords list separately
-    const chordsContainer = this.shadowRoot.getElementById('meta-chords');
-    const chordsList = this.shadowRoot.getElementById('meta-chords-list');
-    
-    if (chordsContainer && chordsList) {
-      if (metadata.chords && metadata.chords.length > 0) {
-        chordsList.innerHTML = '';
-        
-        metadata.chords.forEach(chordLine => {
-          // Parse chord line: "ChordName - frets - fingering" or "ChordName - frets"
-          const parts = chordLine.split('-').map(p => p.trim());
-          if (parts.length >= 2) {
-            const chordName = parts[0];
-            const frets = parts[1];
-            const fingering = parts[2] || '';
-            
-            const chordDiv = document.createElement('div');
-            chordDiv.className = 'chord-item';
-            
-            const nameSpan = document.createElement('span');
-            nameSpan.className = 'chord-name';
-            nameSpan.textContent = chordName;
-            
-            const fretsSpan = document.createElement('span');
-            fretsSpan.className = 'chord-frets';
-            fretsSpan.textContent = frets;
-            
-            chordDiv.appendChild(nameSpan);
-            chordDiv.appendChild(fretsSpan);
-            
-            if (fingering) {
-              const fingeringSpan = document.createElement('span');
-              fingeringSpan.className = 'chord-fingering';
-              fingeringSpan.textContent = fingering;
-              chordDiv.appendChild(fingeringSpan);
-            }
-            
-            chordsList.appendChild(chordDiv);
-          }
-        });
-        
-        chordsContainer.style.display = 'flex';
-        hasAny = true;
-      } else {
-        chordsContainer.style.display = 'none';
-      }
-    }
-    
-    // Show/hide the metadata bar
-    if (hasAny) {
-      metadataBar.classList.add('visible');
-    } else {
-      metadataBar.classList.remove('visible');
-    }
   }
 
   /**

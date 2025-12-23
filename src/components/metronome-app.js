@@ -1,11 +1,20 @@
 /**
  * Metronome Web Component
  * A full-featured metronome with tempo, time signature, and accent controls
+ * Now includes tabbed panel with Info (chords/strumming) and Metronome tabs
  */
 class MetronomeApp extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
+    
+    // Tab state
+    this.activeTab = 'info'; // 'info' or 'metronome'
+    
+    // Info tab state
+    this.strummingPattern = '';
+    this.chords = []; // Array of { name, frets, fingering }
+    this.songMetadata = {}; // { title, artist, tempo, timing, tuning, key, capo }
     
     // Metronome state
     this.isPlaying = false;
@@ -38,6 +47,51 @@ class MetronomeApp extends HTMLElement {
     this.setupEventListeners();
     this.initAudio();
     this.loadFromStorage();
+    this.listenForTabMetadata();
+  }
+
+  /**
+   * Listen for tab metadata events from tab-viewer
+   */
+  listenForTabMetadata() {
+    window.addEventListener('tab-metadata-loaded', (e) => {
+      const metadata = e.detail;
+      
+      // Store all song metadata
+      this.songMetadata = {
+        title: metadata.title || '',
+        artist: metadata.artist || '',
+        tempo: metadata.tempo || '',
+        timing: metadata.timing || '',
+        tuning: metadata.tuning || '',
+        key: metadata.key || '',
+        capo: metadata.capo || ''
+      };
+      
+      // Update strumming pattern
+      if (metadata.strummingpattern) {
+        this.strummingPattern = metadata.strummingpattern;
+      } else {
+        this.strummingPattern = '';
+      }
+      
+      // Update chords
+      if (metadata.chords && Array.isArray(metadata.chords)) {
+        this.chords = metadata.chords.map(chordLine => {
+          const parts = chordLine.split('-').map(p => p.trim());
+          return {
+            name: parts[0] || '',
+            frets: parts[1] || '',
+            fingering: parts[2] || ''
+          };
+        }).filter(c => c.name && c.frets);
+      } else {
+        this.chords = [];
+      }
+      
+      // Re-render info tab if it's active
+      this.renderInfoTab();
+    });
   }
 
   /**
@@ -152,34 +206,217 @@ class MetronomeApp extends HTMLElement {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 12px 16px;
+          padding: 0;
           background: var(--bg-tertiary);
           border-bottom: 1px solid var(--border-color);
           flex-shrink: 0;
         }
 
-        .title {
+        .tab-buttons {
+          display: flex;
+          flex: 1;
+        }
+
+        .tab-btn {
+          flex: 1;
+          padding: 10px 16px;
           font-family: var(--font-display);
-          font-size: 0.85rem;
+          font-size: 0.8rem;
           font-weight: 600;
           text-transform: uppercase;
           letter-spacing: 0.05em;
-          color: var(--text-secondary);
+          color: var(--text-muted);
+          background: transparent;
+          border: none;
+          border-bottom: 2px solid transparent;
+          cursor: pointer;
+          transition: all 0.2s ease;
           display: flex;
           align-items: center;
-          gap: 8px;
+          justify-content: center;
+          gap: 6px;
         }
 
-        .title::before {
+        .tab-btn:hover {
+          color: var(--text-secondary);
+          background: var(--bg-elevated);
+        }
+
+        .tab-btn.active {
+          color: var(--accent-primary);
+          border-bottom-color: var(--accent-primary);
+          background: var(--bg-secondary);
+        }
+
+        .tab-btn::before {
           content: '';
-          width: 8px;
-          height: 8px;
+          width: 6px;
+          height: 6px;
           border-radius: 50%;
-          background: var(--accent-primary);
-          box-shadow: 0 0 8px var(--accent-glow);
+          background: currentColor;
+          opacity: 0.5;
         }
 
-        .content {
+        .tab-btn.active::before {
+          opacity: 1;
+          box-shadow: 0 0 6px var(--accent-glow);
+        }
+
+        .tab-content {
+          flex: 1;
+          display: none;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        .tab-content.active {
+          display: flex;
+        }
+
+        /* Info Tab Styles */
+        .info-content {
+          flex: 1;
+          padding: 12px;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        .info-section {
+          background: var(--bg-primary);
+          border-radius: 8px;
+          border: 1px solid var(--border-color);
+          padding: 12px;
+        }
+
+        .info-section-title {
+          font-family: var(--font-display);
+          font-size: 0.7rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: var(--text-muted);
+          margin-bottom: 10px;
+        }
+
+        .strumming-pattern {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
+          font-family: var(--font-mono);
+          font-size: 1.1rem;
+        }
+
+        .strum-char {
+          width: 24px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--bg-elevated);
+          border-radius: 4px;
+          color: var(--text-primary);
+          font-weight: 600;
+        }
+
+        .strum-char.down {
+          color: var(--accent-primary);
+        }
+
+        .strum-char.up {
+          color: var(--success);
+        }
+
+        .strum-char.bass {
+          color: #60a5fa;
+        }
+
+        .strum-char.root {
+          color: #f472b6;
+        }
+
+        .strum-char.rest {
+          color: var(--text-muted);
+        }
+
+        .strum-char.number {
+          color: #a78bfa;
+        }
+
+        .chord-diagrams {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+          justify-content: flex-start;
+        }
+
+        .chord-diagram {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .chord-name {
+          font-family: var(--font-display);
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: var(--accent-primary);
+        }
+
+        .empty-state {
+          color: var(--text-muted);
+          font-size: 0.8rem;
+          font-style: italic;
+          text-align: center;
+          padding: 20px;
+        }
+
+        /* Song Info Section */
+        .song-info {
+          margin-bottom: 16px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .song-title {
+          font-size: 1.1rem;
+          font-weight: 600;
+          color: var(--accent-primary);
+          margin-bottom: 2px;
+        }
+
+        .song-artist {
+          font-size: 0.9rem;
+          color: var(--text-secondary);
+          margin-bottom: 10px;
+        }
+
+        .song-info-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px 16px;
+        }
+
+        .song-info-item {
+          display: flex;
+          gap: 6px;
+          font-size: 0.8rem;
+        }
+
+        .info-label {
+          color: var(--text-muted);
+          font-weight: 500;
+        }
+
+        .info-value {
+          color: var(--text-primary);
+          font-weight: 600;
+        }
+
+        /* Metronome Tab Content */
+        .metronome-content {
           flex: 1;
           display: flex;
           flex-direction: column;
@@ -570,14 +807,28 @@ class MetronomeApp extends HTMLElement {
         /* Mobile and Tablet Portrait - Compact 2-line layout */
         @media (max-width: 768px) {
           .header {
-            padding: 4px 8px;
+            padding: 0;
           }
 
-          .title {
+          .tab-btn {
+            padding: 6px 10px;
             font-size: 0.7rem;
           }
 
-          .content {
+          .info-content {
+            padding: 6px 8px;
+            gap: 8px;
+          }
+
+          .info-section {
+            padding: 8px;
+          }
+
+          .chord-diagrams {
+            gap: 8px;
+          }
+
+          .metronome-content {
             padding: 6px 8px;
             gap: 6px;
             overflow: visible;
@@ -661,10 +912,38 @@ class MetronomeApp extends HTMLElement {
       </style>
 
       <div class="header">
-        <span class="title">Metronome</span>
+        <div class="tab-buttons">
+          <button class="tab-btn active" id="tab-info" data-tab="info">Info</button>
+          <button class="tab-btn" id="tab-metronome" data-tab="metronome">Metronome</button>
+        </div>
       </div>
 
-      <div class="content">
+      <!-- Info Tab -->
+      <div class="tab-content active" id="content-info">
+        <div class="info-content">
+          <div class="song-info" id="song-info">
+            <div class="song-title" id="song-title"></div>
+            <div class="song-artist" id="song-artist"></div>
+            <div class="song-info-grid" id="song-info-grid"></div>
+          </div>
+          <div class="info-section" id="strumming-section">
+            <div class="info-section-title">Strumming Pattern</div>
+            <div class="strumming-pattern" id="strumming-display">
+              <div class="empty-state">Load a tab with a strumming pattern</div>
+            </div>
+          </div>
+          <div class="info-section" id="chords-section">
+            <div class="info-section-title">Chord Diagrams</div>
+            <div class="chord-diagrams" id="chord-diagrams">
+              <div class="empty-state">Load a tab with chord definitions</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Metronome Tab -->
+      <div class="tab-content" id="content-metronome">
+        <div class="metronome-content">
         <!-- Beat Visualization -->
         <div class="beat-display" id="beat-display">
           <!-- Beats will be generated dynamically -->
@@ -758,10 +1037,304 @@ class MetronomeApp extends HTMLElement {
           </button>
           <button class="tap-btn" id="tap-btn">Tap</button>
         </div>
+        </div>
       </div>
     `;
 
     this.updateBeatDisplay();
+    this.renderInfoTab();
+  }
+
+  /**
+   * Render the Info tab content (strumming pattern and chord diagrams)
+   */
+  renderInfoTab() {
+    this.renderSongInfo();
+    this.renderStrummingPattern();
+    this.renderChordDiagrams();
+  }
+
+  /**
+   * Render the song info section
+   */
+  renderSongInfo() {
+    const titleEl = this.shadowRoot.getElementById('song-title');
+    const artistEl = this.shadowRoot.getElementById('song-artist');
+    const gridEl = this.shadowRoot.getElementById('song-info-grid');
+    const containerEl = this.shadowRoot.getElementById('song-info');
+    
+    if (!titleEl || !artistEl || !gridEl || !containerEl) return;
+    
+    const meta = this.songMetadata || {};
+    
+    // Check if we have any data to show
+    const hasData = meta.title || meta.artist || meta.tempo || meta.timing || 
+                    meta.tuning || meta.key || meta.capo;
+    
+    if (!hasData) {
+      containerEl.style.display = 'none';
+      return;
+    }
+    
+    containerEl.style.display = 'block';
+    
+    // Set title and artist
+    titleEl.textContent = meta.title || '';
+    artistEl.textContent = meta.artist || '';
+    
+    // Build info grid items
+    const infoItems = [];
+    if (meta.tempo) infoItems.push({ label: 'Tempo', value: `${meta.tempo} BPM` });
+    if (meta.timing) infoItems.push({ label: 'Time', value: meta.timing });
+    if (meta.tuning) infoItems.push({ label: 'Tuning', value: meta.tuning });
+    if (meta.key) infoItems.push({ label: 'Key', value: meta.key });
+    if (meta.capo) infoItems.push({ label: 'Capo', value: `Fret ${meta.capo}` });
+    
+    gridEl.innerHTML = infoItems.map(item => `
+      <div class="song-info-item">
+        <span class="info-label">${item.label}</span>
+        <span class="info-value">${item.value}</span>
+      </div>
+    `).join('');
+  }
+
+  /**
+   * Render the strumming pattern display
+   */
+  renderStrummingPattern() {
+    const container = this.shadowRoot.getElementById('strumming-display');
+    if (!container) return;
+
+    if (!this.strummingPattern) {
+      container.innerHTML = '<div class="empty-state">Load a tab with a strumming pattern</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    
+    for (const char of this.strummingPattern) {
+      const div = document.createElement('div');
+      div.className = 'strum-char';
+      div.textContent = char;
+      
+      // Apply color classes based on character
+      const upperChar = char.toUpperCase();
+      if (upperChar === 'D') {
+        div.classList.add('down');
+        div.textContent = '↓';
+        div.title = 'Down stroke';
+      } else if (upperChar === 'U') {
+        div.classList.add('up');
+        div.textContent = '↑';
+        div.title = 'Up stroke';
+      } else if (upperChar === 'B') {
+        div.classList.add('bass');
+        div.title = 'Bass string';
+      } else if (upperChar === 'R') {
+        div.classList.add('root');
+        div.title = 'Root note';
+      } else if (char === '-') {
+        div.classList.add('rest');
+        div.textContent = '·';
+        div.title = 'Rest/pause';
+      } else if (char === '_') {
+        div.classList.add('rest');
+        div.textContent = '·';
+        div.title = 'Skip (no strum)';
+      } else if (char === ' ') {
+        div.classList.add('rest');
+        div.textContent = '·';
+        div.title = 'Rest';
+      } else if (/[1-6]/.test(char)) {
+        div.classList.add('number');
+        div.title = `String ${char}`;
+      }
+      
+      container.appendChild(div);
+    }
+  }
+
+  /**
+   * Render chord diagrams as SVGs
+   */
+  renderChordDiagrams() {
+    const container = this.shadowRoot.getElementById('chord-diagrams');
+    if (!container) return;
+
+    if (!this.chords || this.chords.length === 0) {
+      container.innerHTML = '<div class="empty-state">Load a tab with chord definitions</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    
+    for (const chord of this.chords) {
+      const diagram = document.createElement('div');
+      diagram.className = 'chord-diagram';
+      
+      const name = document.createElement('div');
+      name.className = 'chord-name';
+      name.textContent = chord.name;
+      
+      const svg = this.createChordSVG(chord.frets, chord.fingering);
+      
+      diagram.appendChild(name);
+      diagram.appendChild(svg);
+      container.appendChild(diagram);
+    }
+  }
+
+  /**
+   * Create an SVG chord diagram
+   * @param {string} frets - Fret positions (e.g., "022000", "x32010")
+   * @param {string} fingering - Optional fingering pattern (e.g., "012000", "x21030")
+   * @returns {SVGElement}
+   */
+  createChordSVG(frets, fingering) {
+    const width = 60;
+    const height = 80;
+    const stringSpacing = 8;
+    const fretSpacing = 14;
+    const leftPadding = 12;
+    const topPadding = 16;
+    const numStrings = 6;
+    const numFrets = 4;
+
+    // Parse frets
+    const fretValues = frets.split('').map(f => f.toLowerCase() === 'x' ? -1 : parseInt(f));
+    const fingerValues = fingering ? fingering.split('').map(f => {
+      if (f.toLowerCase() === 'x') return null;
+      if (f === '0') return null;
+      return f.toUpperCase();
+    }) : [];
+
+    // Calculate min/max frets to determine if we need a position marker
+    const playedFrets = fretValues.filter(f => f > 0);
+    const minFret = playedFrets.length > 0 ? Math.min(...playedFrets) : 0;
+    const maxFret = playedFrets.length > 0 ? Math.max(...playedFrets) : 0;
+    
+    // If all frets are within first 4, show from nut. Otherwise, show from minFret
+    let startFret = 0;
+    let showNut = true;
+    if (maxFret > 4) {
+      startFret = minFret - 1;
+      showNut = false;
+    }
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', width);
+    svg.setAttribute('height', height);
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+    // Background
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('width', width);
+    bg.setAttribute('height', height);
+    bg.setAttribute('fill', '#1a1a1a');
+    bg.setAttribute('rx', '4');
+    svg.appendChild(bg);
+
+    // Nut (thick line at top) or position marker
+    if (showNut) {
+      const nut = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      nut.setAttribute('x', leftPadding - 1);
+      nut.setAttribute('y', topPadding - 2);
+      nut.setAttribute('width', (numStrings - 1) * stringSpacing + 2);
+      nut.setAttribute('height', 3);
+      nut.setAttribute('fill', '#f0e6d3');
+      svg.appendChild(nut);
+    } else {
+      // Position marker
+      const posText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      posText.setAttribute('x', 2);
+      posText.setAttribute('y', topPadding + fretSpacing / 2 + 3);
+      posText.setAttribute('font-size', '8');
+      posText.setAttribute('fill', '#a89f8c');
+      posText.setAttribute('font-family', 'sans-serif');
+      posText.textContent = startFret + 1;
+      svg.appendChild(posText);
+    }
+
+    // Fret lines
+    for (let i = 0; i <= numFrets; i++) {
+      const fret = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      fret.setAttribute('x1', leftPadding);
+      fret.setAttribute('y1', topPadding + i * fretSpacing);
+      fret.setAttribute('x2', leftPadding + (numStrings - 1) * stringSpacing);
+      fret.setAttribute('y2', topPadding + i * fretSpacing);
+      fret.setAttribute('stroke', '#4a4a4a');
+      fret.setAttribute('stroke-width', '1');
+      svg.appendChild(fret);
+    }
+
+    // Strings
+    for (let i = 0; i < numStrings; i++) {
+      const string = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      string.setAttribute('x1', leftPadding + i * stringSpacing);
+      string.setAttribute('y1', topPadding);
+      string.setAttribute('x2', leftPadding + i * stringSpacing);
+      string.setAttribute('y2', topPadding + numFrets * fretSpacing);
+      string.setAttribute('stroke', '#6b6459');
+      string.setAttribute('stroke-width', '1');
+      svg.appendChild(string);
+    }
+
+    // Finger positions and markers
+    for (let i = 0; i < numStrings; i++) {
+      const fretVal = fretValues[i];
+      const fingerVal = fingerValues[i];
+      const x = leftPadding + i * stringSpacing;
+
+      if (fretVal === -1) {
+        // X marker (muted string)
+        const xMark = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        xMark.setAttribute('x', x);
+        xMark.setAttribute('y', topPadding - 5);
+        xMark.setAttribute('text-anchor', 'middle');
+        xMark.setAttribute('font-size', '8');
+        xMark.setAttribute('fill', '#6b6459');
+        xMark.setAttribute('font-family', 'sans-serif');
+        xMark.textContent = '×';
+        svg.appendChild(xMark);
+      } else if (fretVal === 0) {
+        // Open string (O marker)
+        const oMark = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        oMark.setAttribute('cx', x);
+        oMark.setAttribute('cy', topPadding - 6);
+        oMark.setAttribute('r', '3');
+        oMark.setAttribute('stroke', '#a89f8c');
+        oMark.setAttribute('stroke-width', '1');
+        oMark.setAttribute('fill', 'none');
+        svg.appendChild(oMark);
+      } else {
+        // Fretted note
+        const displayFret = fretVal - startFret;
+        const y = topPadding + (displayFret - 0.5) * fretSpacing;
+        
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dot.setAttribute('cx', x);
+        dot.setAttribute('cy', y);
+        dot.setAttribute('r', '4');
+        dot.setAttribute('fill', fingerVal ? '#e07020' : '#f0e6d3');
+        svg.appendChild(dot);
+
+        // Finger number
+        if (fingerVal) {
+          const fingerText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          fingerText.setAttribute('x', x);
+          fingerText.setAttribute('y', y + 3);
+          fingerText.setAttribute('text-anchor', 'middle');
+          fingerText.setAttribute('font-size', '7');
+          fingerText.setAttribute('fill', '#0d0d0d');
+          fingerText.setAttribute('font-weight', 'bold');
+          fingerText.setAttribute('font-family', 'sans-serif');
+          fingerText.textContent = fingerVal;
+          svg.appendChild(fingerText);
+        }
+      }
+    }
+
+    return svg;
   }
 
   initAudio() {
@@ -778,6 +1351,27 @@ class MetronomeApp extends HTMLElement {
   }
 
   setupEventListeners() {
+    // Tab switching
+    const tabInfo = this.shadowRoot.getElementById('tab-info');
+    const tabMetronome = this.shadowRoot.getElementById('tab-metronome');
+    const contentInfo = this.shadowRoot.getElementById('content-info');
+    const contentMetronome = this.shadowRoot.getElementById('content-metronome');
+
+    const switchTab = (tab) => {
+      this.activeTab = tab;
+      
+      // Update button states
+      tabInfo.classList.toggle('active', tab === 'info');
+      tabMetronome.classList.toggle('active', tab === 'metronome');
+      
+      // Update content visibility
+      contentInfo.classList.toggle('active', tab === 'info');
+      contentMetronome.classList.toggle('active', tab === 'metronome');
+    };
+
+    tabInfo.addEventListener('click', () => switchTab('info'));
+    tabMetronome.addEventListener('click', () => switchTab('metronome'));
+
     // Tempo slider and input
     const tempoSlider = this.shadowRoot.getElementById('tempo-slider');
     const tempoValue = this.shadowRoot.getElementById('tempo-value');
